@@ -99,6 +99,10 @@ struct SettingsView: View {
                 AccentPicker(selection: settings.accent)
             }
             .padding(.vertical, Spacing.s)
+
+            Toggle(isOn: settings.storiesUsesListIcon) {
+                Label("List Icon for Stories Tab", systemImage: "list.bullet")
+            }
         }
     }
 

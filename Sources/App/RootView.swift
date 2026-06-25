@@ -93,7 +93,7 @@ struct MobileRootView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             FeedView()
-                .tabItem { Label("Stories", systemImage: "flame.fill") }
+                .tabItem { Label("Stories", systemImage: settings.storiesUsesListIcon ? "list.bullet" : "flame.fill") }
                 .tag(Tab.stories)
             SearchView()
                 .tabItem { Label("Search", systemImage: "magnifyingglass") }

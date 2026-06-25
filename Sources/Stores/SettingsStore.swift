@@ -74,6 +74,10 @@ final class SettingsStore {
     var accent: AccentTheme {
         didSet { store(accent.rawValue, .accent) }
     }
+    /// Use a plain list icon for the Stories tab instead of the flame.
+    var storiesUsesListIcon: Bool {
+        didSet { store(storiesUsesListIcon, .storiesUsesListIcon) }
+    }
     var defaultFeed: Feed {
         didSet { store(defaultFeed.rawValue, .defaultFeed) }
     }
@@ -159,6 +163,7 @@ final class SettingsStore {
         self.defaults = defaults
         appearance = AppAppearance(rawValue: defaults.string(forKey: Key.appearance.rawValue) ?? "") ?? .system
         accent = AccentTheme(rawValue: defaults.string(forKey: Key.accent.rawValue) ?? "") ?? .ember
+        storiesUsesListIcon = defaults.object(forKey: Key.storiesUsesListIcon.rawValue) as? Bool ?? false
         defaultFeed = Feed(rawValue: defaults.string(forKey: Key.defaultFeed.rawValue) ?? "") ?? .top
         openLinksInApp = defaults.object(forKey: Key.openLinksInApp.rawValue) as? Bool ?? true
         readerMode = defaults.object(forKey: Key.readerMode.rawValue) as? Bool ?? false
@@ -184,6 +189,7 @@ final class SettingsStore {
     func resetToDefaults() {
         appearance = .system
         accent = .ember
+        storiesUsesListIcon = false
         defaultFeed = .top
         openLinksInApp = true
         readerMode = false
@@ -202,6 +208,7 @@ final class SettingsStore {
     private enum Key: String {
         case appearance = "settings.appearance"
         case accent = "settings.accent"
+        case storiesUsesListIcon = "settings.storiesUsesListIcon"
         case defaultFeed = "settings.defaultFeed"
         case openLinksInApp = "settings.openLinksInApp"
         case readerMode = "settings.readerMode"
