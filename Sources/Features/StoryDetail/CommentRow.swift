@@ -15,6 +15,12 @@ struct CommentRow: View {
     var onReply: () -> Void = {}
     var onVote: () -> Void = {}
     var onEdit: () -> Void = {}
+    /// Tap on a depth rail: skip to the next comment at that level.
+    var onSkip: (Int) -> Void = { _ in }
+    /// Tap on a quote bar: the quoted text, for jumping to its source comment.
+    var onQuoteTap: ((String) -> Void)? = nil
+    /// Transient background tint when this row is the target of a quote jump.
+    var highlightTint: Color? = nil
     let onToggle: () -> Void
 
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -27,8 +33,15 @@ struct CommentRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            ThreadIndicator(depth: cappedDepth)
-                .padding(.trailing, comment.depth > 0 ? Spacing.s : 0)
+            // Rails span the full row height (no vertical padding of their own),
+            // so adjacent comments' lines read as continuous; the content keeps
+            // its usual breathing room via its own vertical padding.
+            ThreadIndicator(cappedDepth: cappedDepth, ownDepth: comment.depth, onSkip: onSkip)
+                .padding(.trailing, Spacing.s)
+                // A 2px inset top & bottom leaves a 4px gap (plus the divider)
+                // between one comment's rails and the next, so they read as
+                // related but distinct rather than one unbroken line.
+                .padding(.vertical, Spacing.xxs)
 
             VStack(alignment: .leading, spacing: 7) {
                 header
@@ -51,11 +64,15 @@ struct CommentRow: View {
                     }
                 }
             }
+            .padding(.vertical, Spacing.m)
         }
-        .padding(.vertical, Spacing.m)
-        .padding(.horizontal, Spacing.l)
+        .padding(.leading, Spacing.xs)
+        .padding(.trailing, Spacing.l)
         .contentShape(Rectangle())
-        .background(Theme.background)
+        .background(highlightTint ?? Theme.background)
+        .accessibilityActions {
+            Button("Next comment at this level") { onSkip(comment.depth) }
+        }
     }
 
     private var header: some View {
@@ -147,10 +164,20 @@ struct CommentRow: View {
         .accessibilityHidden(false)
     }
 
+    /// Leading offset at which a comment of `depth` begins its content (avatar /
+    /// text), measured from the row's leading edge. Used to inset thread dividers
+    /// so a reply's divider lines up with the reply's text, conveying nesting by
+    /// position rather than colour.
+    static func contentInset(forDepth depth: Int) -> CGFloat {
+        let capped = min(depth, 7)
+        // leading row pad + (rail columns) + indicator trailing pad
+        return Spacing.xs + CGFloat(capped + 1) * ThreadIndicator.columnWidth + Spacing.s
+    }
+
     private var bodyContent: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                CommentBlockView(block: block)
+                CommentBlockView(block: block, onQuoteTap: onQuoteTap)
             }
         }
         .accessibilityElement(children: .combine)
@@ -158,9 +185,16 @@ struct CommentRow: View {
 }
 
 /// Vertical rainbow thread bars conveying nesting depth (also positional via
-/// indentation, so it remains legible without color).
+/// indentation, so it remains legible without color). Every row carries at least
+/// the leftmost (top-level) rail, and each rail is tappable to skip to the next
+/// comment at that level.
 private struct ThreadIndicator: View {
-    let depth: Int
+    /// Visual depth, capped so very deep threads don't run off the edge.
+    let cappedDepth: Int
+    /// The comment's true depth, used so the rightmost rail always navigates the
+    /// comment's own level even when the visual depth is capped.
+    let ownDepth: Int
+    var onSkip: (Int) -> Void = { _ in }
 
     private static let palette: [Color] = [
         Color(hue: 0.07, saturation: 0.75, brightness: 0.95),
@@ -171,13 +205,28 @@ private struct ThreadIndicator: View {
         Color(hue: 0.72, saturation: 0.55, brightness: 0.80),
         Color(hue: 0.85, saturation: 0.55, brightness: 0.80),
     ]
+    fileprivate static let columnWidth: CGFloat = 9
+    private static let barWidth: CGFloat = 2
+
+    /// The nesting level a given rail column navigates. The rightmost rail maps
+    /// to the comment's true depth; the rest map straight to their column index.
+    private func level(for column: Int) -> Int {
+        column == cappedDepth ? ownDepth : column
+    }
 
     var body: some View {
-        HStack(spacing: 7) {
-            ForEach(0..<depth, id: \.self) { level in
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(Self.palette[level % Self.palette.count].opacity(0.7))
-                    .frame(width: 2)
+        HStack(spacing: 0) {
+            ForEach(0...cappedDepth, id: \.self) { column in
+                let lvl = level(for: column)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Self.palette[lvl % Self.palette.count].opacity(0.7))
+                        .frame(width: Self.barWidth)
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { onSkip(lvl) }
+                }
+                .frame(width: Self.columnWidth)
             }
         }
         .accessibilityHidden(true)

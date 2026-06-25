@@ -9,6 +9,9 @@ DerivedData/
 xcuserdata/
 *.xcuserstate
 
+# Nova editor (local tooling — never commit)
+.nova/
+
 # macOS
 .DS_Store
 

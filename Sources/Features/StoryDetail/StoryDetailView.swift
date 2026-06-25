@@ -24,6 +24,8 @@ struct StoryDetailView: View {
     private var story: HNItem { vm.resolvedItem }
 
     @State private var pinchBaseline: Double?
+    /// The comment briefly tinted after a quote jump, so the destination is clear.
+    @State private var highlightedComment: Int?
     @State private var webTask: HNWebTask?
     @State private var composeTarget: ComposeTarget?
     @State private var editError: String?
@@ -56,10 +58,11 @@ struct StoryDetailView: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 header
-                commentsSection
+                commentsSection(proxy: proxy)
             }
             // Keep a comfortable reading measure on wide (desktop) windows.
             .frame(maxWidth: 760)
@@ -110,6 +113,37 @@ struct StoryDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(editError ?? "")
+        }
+        }
+    }
+
+    /// Jump to the comment a tapped quote came from, tinting it briefly so the
+    /// destination is obvious. A firmer haptic when the source can't be resolved.
+    private func performQuoteJump(from id: Int, quote: String, proxy: ScrollViewProxy) {
+        guard let target = vm.quoteTarget(from: id, quote: quote) else {
+            Haptics.rigid()
+            return
+        }
+        Haptics.soft()
+        withAnimation(.easeInOut(duration: 0.25)) {
+            proxy.scrollTo(target, anchor: .top)
+            highlightedComment = target
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(1.1))
+            withAnimation(.easeOut(duration: 0.4)) { highlightedComment = nil }
+        }
+    }
+
+    /// Scroll to the next comment at `level`, or a firmer bump at the last one.
+    private func performSkip(from id: Int, level: Int, proxy: ScrollViewProxy) {
+        if let target = vm.skipTarget(from: id, level: level) {
+            Haptics.soft()
+            withAnimation(.easeInOut(duration: 0.25)) {
+                proxy.scrollTo(target, anchor: .top)
+            }
+        } else {
+            Haptics.rigid()
         }
     }
 
@@ -325,7 +359,7 @@ struct StoryDetailView: View {
 
     // MARK: Comments
 
-    private var commentsSection: some View {
+    private func commentsSection(proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Comments")
@@ -358,7 +392,7 @@ struct StoryDetailView: View {
 
             Divider().background(Theme.hairline)
 
-            commentsContent
+            commentsContent(proxy: proxy)
         }
         .padding(.top, Spacing.s)
     }
@@ -384,7 +418,7 @@ struct StoryDetailView: View {
         .foregroundStyle(settings.accent.color)
     }
 
-    @ViewBuilder private var commentsContent: some View {
+    @ViewBuilder private func commentsContent(proxy: ScrollViewProxy) -> some View {
         switch vm.phase {
         case .loading:
             VStack(spacing: Spacing.l) {
@@ -399,8 +433,9 @@ struct StoryDetailView: View {
                                title: "No comments yet",
                                message: "Be the first to join the discussion on Hacker News.")
             } else {
+                let rows = vm.visibleComments
                 LazyVStack(spacing: 0) {
-                    ForEach(vm.visibleComments) { comment in
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, comment in
                         CommentRow(
                             comment: comment,
                             opAuthor: story.author,
@@ -411,15 +446,29 @@ struct StoryDetailView: View {
                             canEdit: canEdit(comment),
                             onReply: { compose(parentID: comment.id, title: "Reply", context: "Replying to \(comment.author)") },
                             onVote: { upvote(comment.id) },
-                            onEdit: { edit(comment) }
+                            onEdit: { edit(comment) },
+                            onSkip: { level in
+                                performSkip(from: comment.id, level: level, proxy: proxy)
+                            },
+                            onQuoteTap: { quote in
+                                performQuoteJump(from: comment.id, quote: quote, proxy: proxy)
+                            },
+                            highlightTint: highlightedComment == comment.id
+                                ? settings.accent.color.opacity(0.14) : nil
                         ) {
                             withAnimation(.snappy(duration: 0.22)) {
                                 vm.toggleCollapse(comment.id)
                             }
                         }
+                        // Inset each divider to line up with the content of the
+                        // comment below it, so depth reads by position: a new
+                        // top-level thread gets a full-bleed line, while deeper
+                        // replies get progressively shorter, inset lines.
+                        let nextDepth = index + 1 < rows.count ? rows[index + 1].depth : 0
+                        let startsNewSection = nextDepth == 0
                         Divider()
-                            .background(Theme.hairline)
-                            .padding(.leading, Spacing.l)
+                            .background(startsNewSection ? Theme.separator : Theme.hairline)
+                            .padding(.leading, startsNewSection ? 0 : CommentRow.contentInset(forDepth: nextDepth))
                     }
                 }
             }

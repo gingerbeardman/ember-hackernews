@@ -4,6 +4,9 @@ import SwiftUI
 /// Used for both comment bodies and self/text posts.
 struct CommentBlockView: View {
     let block: CommentBlock
+    /// When set, tapping a quote's accent bar reports its plain text so the
+    /// caller can jump to the quoted (up-thread) comment.
+    var onQuoteTap: ((String) -> Void)? = nil
 
     @Environment(SettingsStore.self) private var settings
 
@@ -22,9 +25,7 @@ struct CommentBlockView: View {
 
         case .quote(let attributed):
             HStack(alignment: .top, spacing: Spacing.s) {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(settings.accent.color.opacity(0.55))
-                    .frame(width: 3)
+                quoteBar(for: attributed)
                 Text(attributed)
                     .font(bodyFont.italic())
                     .lineSpacing(AppFont.readingLineSpacing * scale)
@@ -43,6 +44,29 @@ struct CommentBlockView: View {
             }
             .background(Theme.surfacePressed)
             .clipShape(RoundedRectangle(cornerRadius: Radius.s, style: .continuous))
+        }
+    }
+
+    /// The accent bar beside a quote. When a tap handler is provided it becomes a
+    /// control that jumps to the quoted comment; the hit area is widened well past
+    /// the 3pt bar without disturbing the text's position.
+    @ViewBuilder private func quoteBar(for attributed: AttributedString) -> some View {
+        let bar = RoundedRectangle(cornerRadius: 1.5)
+            .fill(settings.accent.color.opacity(0.55))
+            .frame(width: 3)
+        if let onQuoteTap {
+            bar
+                .padding(.horizontal, 8)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    Haptics.tap()
+                    onQuoteTap(String(attributed.characters))
+                }
+                .padding(.horizontal, -8)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel("Go to quoted comment")
+        } else {
+            bar
         }
     }
 

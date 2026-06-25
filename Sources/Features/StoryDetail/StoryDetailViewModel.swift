@@ -100,6 +100,65 @@ final class StoryDetailViewModel {
 
     var commentCount: Int { comments.count }
 
+    /// Tap-to-skip target: from the comment with `id`, find the next visible
+    /// comment at nesting `level`, ignoring parentage (any comment at that depth).
+    /// The reference point is the tapped comment's own ancestor (or itself) at
+    /// `level`, so taps from anywhere in a subtree behave the same. Returns the
+    /// target comment id, or nil at the last comment of that level.
+    func skipTarget(from id: Int, level: Int) -> Int? {
+        let list = visibleComments
+        guard let i = list.firstIndex(where: { $0.id == id }) else { return nil }
+        // Anchor: the nearest comment at this level at or above the tapped row.
+        guard let anchor = list[...i].lastIndex(where: { $0.depth == level }) else { return nil }
+        return list[(anchor + 1)...].first(where: { $0.depth == level })?.id
+    }
+
+    /// Source comment for a tapped quote: replies on HN quote text from up the
+    /// thread, so match the quoted text against this comment's ancestors (nearest
+    /// first) and return the one whose body contains it. Falls back to the direct
+    /// parent when nothing matches (e.g. the quote was trimmed or lightly edited).
+    func quoteTarget(from id: Int, quote: String) -> Int? {
+        let list = visibleComments
+        guard let i = list.firstIndex(where: { $0.id == id }), list[i].depth > 0 else { return nil }
+
+        // Walk backwards collecting one ancestor per shallower depth.
+        var ancestors: [FlatComment] = []
+        var wantDepth = list[i].depth - 1
+        var j = i - 1
+        while j >= 0 && wantDepth >= 0 {
+            if list[j].depth == wantDepth {
+                ancestors.append(list[j])
+                wantDepth -= 1
+            }
+            j -= 1
+        }
+        guard !ancestors.isEmpty else { return nil }
+
+        let needle = Self.normalize(quote)
+        // A short, distinctive prefix also matches quotes the replier truncated.
+        let probes = [needle, String(needle.prefix(40))].filter { $0.count >= 8 }
+        for ancestor in ancestors {
+            let hay = Self.normalize(Self.plainText(ancestor.html))
+            if probes.contains(where: { hay.contains($0) }) { return ancestor.id }
+        }
+        return ancestors.first?.id // fall back to the direct parent
+    }
+
+    /// Whitespace-collapsed, lowercased form for forgiving substring matching.
+    private static func normalize(_ s: String) -> String {
+        s.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    /// Flattened plain text of a comment body, quote and code blocks included.
+    private static func plainText(_ html: String) -> String {
+        HTMLRenderer.render(html).map { block in
+            switch block {
+            case .text(let a), .quote(let a): return String(a.characters)
+            case .code(let c): return c
+            }
+        }.joined(separator: " ")
+    }
+
     func isCollapsed(_ id: Int) -> Bool { collapsed.contains(id) }
 
     func toggleCollapse(_ id: Int) {
