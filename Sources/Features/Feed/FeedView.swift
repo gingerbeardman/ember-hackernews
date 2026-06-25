@@ -14,6 +14,12 @@ private struct ScrollInfo: Equatable {
 struct FeedView: View {
     @State private var vm = FeedViewModel()
     @State private var path = NavigationPath()
+    /// Shown when we return to a stale index; tapping it reloads. We never auto-
+    /// reload, so the user's scroll position is never yanked.
+    @State private var showRefreshPill = false
+    /// We resumed while a detail page was open; re-check staleness when the user
+    /// returns to the index so the detail view is left undisturbed.
+    @State private var staleCheckPending = false
     @State private var logoHidden = false
     @State private var logoOpacity: CGFloat = 1
     @State private var logoOffset: CGFloat = 0
@@ -44,6 +50,26 @@ struct FeedView: View {
 
     @Environment(SettingsStore.self) private var settings
     @Environment(BookmarkStore.self) private var bookmarks
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// On returning to the app, offer a refresh if the index is stale. While a
+    /// detail page is open we defer the check (handled when the path empties) so
+    /// the detail view is left exactly as the user left it.
+    private func checkStaleOnResume() {
+        guard let interval = settings.feedRefreshInterval.interval,
+              vm.isStale(olderThan: interval) else { return }
+        if path.isEmpty {
+            withAnimation(.snappy) { showRefreshPill = true }
+        } else {
+            staleCheckPending = true
+        }
+    }
+
+    private func refreshFromPill() async {
+        Haptics.tap()
+        withAnimation(.snappy) { showRefreshPill = false }
+        await vm.reload()
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -80,6 +106,17 @@ struct FeedView: View {
                 }
                 .navigationDestination(for: HNItem.self) { StoryDetailView(item: $0) }
                 .navigationDestination(for: UserRoute.self) { UserView(username: $0.username) }
+                .overlay(alignment: .top) { refreshPill }
+        }
+        .onChange(of: scenePhase) { old, new in
+            if new == .active, old != .active { checkStaleOnResume() }
+        }
+        .onChange(of: path) { _, newPath in
+            // Returned to the index after resuming inside a detail page.
+            if newPath.isEmpty, staleCheckPending {
+                staleCheckPending = false
+                checkStaleOnResume()
+            }
         }
         .task {
             await vm.startIfNeeded()
@@ -88,6 +125,29 @@ struct FeedView: View {
                 path.append(first)
             }
             #endif
+        }
+    }
+
+    /// Floating prompt offering to reload a stale index, without disturbing the
+    /// user's place until they tap it.
+    @ViewBuilder private var refreshPill: some View {
+        if showRefreshPill {
+            Button {
+                Task { await refreshFromPill() }
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(settings.accent.color)
+                    .padding(.horizontal, Spacing.l)
+                    .padding(.vertical, Spacing.s)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Theme.separator, lineWidth: 1))
+                    .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, Spacing.s)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .accessibilityHint("Reloads the story list, which is out of date")
         }
     }
 
@@ -101,7 +161,10 @@ struct FeedView: View {
                 ErrorStateView(message: message) { Task { await vm.reload() } }
             }
             .background(Theme.background)
-            .refreshable { await vm.reload() }
+            .refreshable {
+            if showRefreshPill { withAnimation(.snappy) { showRefreshPill = false } }
+            await vm.reload()
+        }
         default:
             storyList
         }
@@ -176,7 +239,10 @@ struct FeedView: View {
                 logoHidden = false
             }
         }
-        .refreshable { await vm.reload() }
+        .refreshable {
+            if showRefreshPill { withAnimation(.snappy) { showRefreshPill = false } }
+            await vm.reload()
+        }
     }
 }
 

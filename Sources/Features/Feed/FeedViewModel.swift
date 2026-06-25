@@ -18,6 +18,8 @@ final class FeedViewModel {
     private(set) var phase: LoadPhase = .loading
     private(set) var isLoadingMore = false
     private(set) var canLoadMore = true
+    /// When the index (first page) was last successfully fetched, for staleness.
+    private(set) var lastLoaded: Date?
 
     private var allIDs: [Int] = []
     private var nextIndex = 0
@@ -45,6 +47,7 @@ final class FeedViewModel {
             canLoadMore = true
             let firstPage = try await fetchPage()
             stories = firstPage
+            lastLoaded = Date()
             phase = .loaded
         } catch {
             if stories.isEmpty { phase = .failed(message(for: error)) }
@@ -69,6 +72,13 @@ final class FeedViewModel {
         canLoadMore = true
         phase = .loading
         await reload()
+    }
+
+    /// Whether the loaded index is older than `interval`. False if never loaded
+    /// (initial load handles that) or while empty.
+    func isStale(olderThan interval: TimeInterval) -> Bool {
+        guard let lastLoaded, !stories.isEmpty else { return false }
+        return Date().timeIntervalSince(lastLoaded) > interval
     }
 
     func shouldLoadMore(at item: HNItem) -> Bool {

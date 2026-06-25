@@ -121,6 +121,14 @@ struct SettingsView: View {
                 Label("Default Feed", systemImage: "list.bullet.rectangle")
             }
 
+            Picker(selection: settings.feedRefreshInterval) {
+                ForEach(FeedRefreshInterval.allCases) { option in
+                    Text(option.title).tag(option)
+                }
+            } label: {
+                Label("Prompt to Refresh", systemImage: "clock.arrow.circlepath")
+            }
+
             Toggle(isOn: settings.openLinksInApp) {
                 Label("Open Links in App", systemImage: "safari")
             }

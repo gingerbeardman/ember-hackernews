@@ -36,6 +36,35 @@ enum AppAppearance: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+/// How old the story index may get before, on returning to the app, we offer a
+/// Refresh prompt. `.off` disables the prompt entirely.
+enum FeedRefreshInterval: String, CaseIterable, Identifiable, Codable {
+    case off, fiveMinutes, tenMinutes, fifteenMinutes, thirtyMinutes, oneHour
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .off: "Never"
+        case .fiveMinutes: "5 minutes"
+        case .tenMinutes: "10 minutes"
+        case .fifteenMinutes: "15 minutes"
+        case .thirtyMinutes: "30 minutes"
+        case .oneHour: "60 minutes"
+        }
+    }
+    /// Staleness threshold, or nil when the prompt is disabled.
+    var interval: TimeInterval? {
+        switch self {
+        case .off: nil
+        case .fiveMinutes: 5 * 60
+        case .tenMinutes: 10 * 60
+        case .fifteenMinutes: 15 * 60
+        case .thirtyMinutes: 30 * 60
+        case .oneHour: 60 * 60
+        }
+    }
+}
+
 /// User preferences, persisted to `UserDefaults` and observed app-wide.
 @Observable
 final class SettingsStore {
@@ -81,6 +110,11 @@ final class SettingsStore {
     /// Default ordering for comment threads.
     var commentSort: CommentSort {
         didSet { store(commentSort.rawValue, .commentSort) }
+    }
+    /// How stale the story index may get before we offer a Refresh prompt on
+    /// returning to the app.
+    var feedRefreshInterval: FeedRefreshInterval {
+        didSet { store(feedRefreshInterval.rawValue, .feedRefreshInterval) }
     }
     var hapticsEnabled: Bool {
         didSet {
@@ -134,6 +168,7 @@ final class SettingsStore {
         accountFeaturesEnabled = defaults.object(forKey: Key.accountFeaturesEnabled.rawValue) as? Bool ?? false
         myCommentsFirst = defaults.object(forKey: Key.myCommentsFirst.rawValue) as? Bool ?? true
         commentSort = CommentSort(rawValue: defaults.string(forKey: Key.commentSort.rawValue) ?? "") ?? .ranked
+        feedRefreshInterval = FeedRefreshInterval(rawValue: defaults.string(forKey: Key.feedRefreshInterval.rawValue) ?? "") ?? .tenMinutes
         hapticsEnabled = defaults.object(forKey: Key.haptics.rawValue) as? Bool ?? true
         underlineLinks = defaults.object(forKey: Key.underlineLinks.rawValue) as? Bool ?? true
         distinguishWithoutColor = defaults.object(forKey: Key.distinguishWithoutColor.rawValue) as? Bool ?? false
@@ -160,6 +195,7 @@ final class SettingsStore {
         showThumbnails = true
         urlAboveTitle = false
         readingTextScale = 1.0
+        feedRefreshInterval = .tenMinutes
         hasCompletedOnboarding = false
     }
 
@@ -175,6 +211,7 @@ final class SettingsStore {
         case accountFeaturesEnabled = "settings.accountFeaturesEnabled"
         case myCommentsFirst = "settings.myCommentsFirst"
         case commentSort = "settings.commentSort"
+        case feedRefreshInterval = "settings.feedRefreshInterval"
         case haptics = "settings.haptics"
         case underlineLinks = "settings.underlineLinks"
         case distinguishWithoutColor = "settings.distinguishWithoutColor"
