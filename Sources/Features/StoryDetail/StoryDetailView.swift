@@ -246,7 +246,6 @@ struct StoryDetailView: View {
 
             metaBar
             if canInteract { actionBar }
-            authorRow
         }
         .padding(Spacing.l)
         .background(Theme.surface)
@@ -319,42 +318,28 @@ struct StoryDetailView: View {
         .accessibilityHint("Opens the linked page")
     }
 
+    /// Compact meta line mirroring the story list row: score, comments, a
+    /// tappable author, and the posting time — no oversized author card.
     private var metaBar: some View {
-        HStack(spacing: Spacing.l) {
+        HStack(spacing: Spacing.m) {
             if story.kind != .job {
                 StatLabel(systemImage: "arrow.up", value: "\(displayedPoints)", tint: Theme.upvote)
-                StatLabel(systemImage: "bubble.left.and.bubble.right", value: "\(vm.commentCount)")
+                    .accessibilityLabel("\(displayedPoints) points")
+                StatLabel(systemImage: "bubble.left", value: "\(vm.commentCount)")
+                    .accessibilityLabel("\(vm.commentCount) comments")
             }
+            NavigationLink(value: UserRoute(username: story.author)) {
+                StatLabel(systemImage: "person", value: story.author).lineLimit(1)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Posted by \(story.author)")
+            .accessibilityHint("View profile")
             StatLabel(systemImage: "clock", value: RelativeTime.compact(story.date))
-            Spacer()
+                .accessibilityLabel("Posted \(RelativeTime.verbose(story.date))")
+            Spacer(minLength: 0)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(metaAccessibilityLabel)
-    }
-
-    private var authorRow: some View {
-        NavigationLink(value: UserRoute(username: story.author)) {
-            HStack(spacing: Spacing.s) {
-                MonogramAvatar(name: story.author, size: 34)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Posted by")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.textTertiary)
-                    Text(story.author)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Theme.textTertiary)
-            }
-            .padding(Spacing.m)
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.m, style: .continuous))
-        }
-        .buttonStyle(.card)
-        .accessibilityLabel("Posted by \(story.author). View profile.")
+        .font(AppFont.meta)
+        .foregroundStyle(Theme.textSecondary)
     }
 
     // MARK: Comments
@@ -539,15 +524,5 @@ struct StoryDetailView: View {
             if t.hasPrefix("show hn") { return ("Show HN", Theme.positive) }
             return nil
         }
-    }
-
-    private var metaAccessibilityLabel: String {
-        var parts: [String] = []
-        if story.kind != .job {
-            parts.append("\(story.points) points")
-            parts.append("\(vm.commentCount) comments")
-        }
-        parts.append("posted \(RelativeTime.verbose(story.date))")
-        return parts.joined(separator: ", ")
     }
 }

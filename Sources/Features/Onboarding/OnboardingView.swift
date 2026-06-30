@@ -645,8 +645,8 @@ private struct OnboardingPreviewRow: View {
                 HStack(spacing: Spacing.m) {
                     StatLabel(systemImage: "arrow.up", value: "842", tint: Theme.upvote)
                     StatLabel(systemImage: "bubble.left", value: "312")
-                    Text("pg")
-                    Text("1h")
+                    StatLabel(systemImage: "person", value: "pg")
+                    StatLabel(systemImage: "clock", value: "1h")
                 }
                 .font(AppFont.meta)
                 .foregroundStyle(Theme.textSecondary)

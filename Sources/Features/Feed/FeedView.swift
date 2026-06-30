@@ -12,6 +12,10 @@ private struct ScrollInfo: Equatable {
 /// The Ember wordmark fades + lifts and the selector eases up as you scroll; the
 /// nav bar collapses to reclaim the wordmark's space once it's gone.
 struct FeedView: View {
+    /// Bumped by the host when the Stories tab is re-selected while already
+    /// active; we respond by scrolling to the top (and refreshing if stale).
+    var reselectSignal: Int = 0
+
     @State private var vm = FeedViewModel()
     @State private var path = NavigationPath()
     /// Shown when we return to a stale index; tapping it reloads. We never auto-
@@ -71,6 +75,13 @@ struct FeedView: View {
         await vm.reload()
     }
 
+    /// Reload if the index is stale (the same threshold the resume pill uses).
+    private func refreshIfStale() {
+        guard let interval = settings.feedRefreshInterval.interval,
+              vm.isStale(olderThan: interval) else { return }
+        Task { await refreshFromPill() }
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             content
@@ -106,7 +117,7 @@ struct FeedView: View {
                 }
                 .navigationDestination(for: HNItem.self) { StoryDetailView(item: $0) }
                 .navigationDestination(for: UserRoute.self) { UserView(username: $0.username) }
-                .overlay(alignment: .top) { refreshPill }
+                .overlay(alignment: .bottom) { refreshPill }
         }
         .onChange(of: scenePhase) { old, new in
             if new == .active, old != .active { checkStaleOnResume() }
@@ -145,8 +156,8 @@ struct FeedView: View {
                     .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
             }
             .buttonStyle(.plain)
-            .padding(.top, Spacing.s)
-            .transition(.move(edge: .top).combined(with: .opacity))
+            .padding(.bottom, Spacing.l)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
             .accessibilityHint("Reloads the story list, which is out of date")
         }
     }
@@ -171,6 +182,7 @@ struct FeedView: View {
     }
 
     private var storyList: some View {
+        ScrollViewReader { proxy in
         List {
             ForEach(Array(vm.stories.enumerated()), id: \.element.id) { index, story in
                 ZStack {
@@ -242,6 +254,13 @@ struct FeedView: View {
         .refreshable {
             if showRefreshPill { withAnimation(.snappy) { showRefreshPill = false } }
             await vm.reload()
+        }
+        .onChange(of: reselectSignal) { _, _ in
+            if let first = vm.stories.first {
+                withAnimation(.snappy) { proxy.scrollTo(first.id, anchor: .top) }
+            }
+            refreshIfStale()
+        }
         }
     }
 }

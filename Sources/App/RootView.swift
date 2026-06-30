@@ -83,6 +83,9 @@ struct RootView: View {
 /// iPhone layout: a tab bar with an independent navigation stack per tab.
 struct MobileRootView: View {
     @State private var selectedTab: Tab = .stories
+    /// Bumped each time the already-active Stories tab is tapped, so FeedView
+    /// can scroll to the top (and refresh if stale).
+    @State private var storiesReselect = 0
     @Environment(SettingsStore.self) private var settings
     @Environment(AccountStore.self) private var account
 
@@ -90,9 +93,22 @@ struct MobileRootView: View {
 
     private var showMe: Bool { settings.accountFeaturesEnabled && account.isSignedIn }
 
+    /// Re-selecting the current tab fires the setter with the same value; catch
+    /// that for Stories to drive scroll-to-top. (Returning from a detail page is
+    /// handled for free — the system pops the stack to root on the same tap.)
+    private var tabSelection: Binding<Tab> {
+        Binding(
+            get: { selectedTab },
+            set: { newValue in
+                if newValue == .stories, selectedTab == .stories { storiesReselect += 1 }
+                selectedTab = newValue
+            }
+        )
+    }
+
     var body: some View {
-        TabView(selection: $selectedTab) {
-            FeedView()
+        TabView(selection: tabSelection) {
+            FeedView(reselectSignal: storiesReselect)
                 .tabItem { Label("Stories", systemImage: settings.storiesUsesListIcon ? "list.bullet" : "flame.fill") }
                 .tag(Tab.stories)
             SearchView()

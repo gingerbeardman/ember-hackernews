@@ -203,13 +203,13 @@ struct StoryRow: View {
             // the row still opens the story.
             if let onSelectUser {
                 Button { onSelectUser(item.author) } label: {
-                    Text(item.author).lineLimit(1)
+                    StatLabel(systemImage: "person", value: item.author).lineLimit(1)
                 }
                 .buttonStyle(.plain)
             } else {
-                Text(item.author).lineLimit(1)
+                StatLabel(systemImage: "person", value: item.author).lineLimit(1)
             }
-            Text(RelativeTime.compact(item.date))
+            StatLabel(systemImage: "clock", value: RelativeTime.compact(item.date))
         }
         .font(AppFont.meta)
         .foregroundStyle(Theme.textSecondary)
