@@ -26,9 +26,17 @@ protocol HNServicing {
     func items(_ ids: [Int]) async throws -> [HNItem]
     func user(_ id: String) async throws -> HNUser
     func commentTree(for id: Int) async throws -> AlgoliaItem
-    func search(_ query: String, mode: SearchMode, page: Int) async throws -> [SearchHit]
+    func search(_ query: String, mode: SearchMode, page: Int, restrictToURL: Bool) async throws -> [SearchHit]
     func comments(byAuthor author: String, limit: Int) async throws -> [UserComment]
     func favoriteIDs(username: String) async throws -> [Int]
+}
+
+extension HNServicing {
+    /// Convenience overload for the common case (search everything, no URL
+    /// restriction), so search UI call sites don't pass `restrictToURL:`.
+    func search(_ query: String, mode: SearchMode, page: Int) async throws -> [SearchHit] {
+        try await search(query, mode: mode, page: page, restrictToURL: false)
+    }
 }
 
 /// Live implementation. Feeds and items come from the official Firebase API;
@@ -142,14 +150,20 @@ final class LiveHNService: HNServicing {
         }
     }
 
-    func search(_ query: String, mode: SearchMode, page: Int) async throws -> [SearchHit] {
+    func search(_ query: String, mode: SearchMode, page: Int, restrictToURL: Bool) async throws -> [SearchHit] {
         var components = URLComponents(string: "\(algoliaBase)/\(mode.path)")!
-        components.queryItems = [
+        var items = [
             URLQueryItem(name: "query", value: query),
             URLQueryItem(name: "tags", value: "story"),
             URLQueryItem(name: "page", value: String(page)),
             URLQueryItem(name: "hitsPerPage", value: "30"),
         ]
+        // Restrict matching to the story URL so a domain watch doesn't fire on
+        // titles/text that merely mention the domain.
+        if restrictToURL {
+            items.append(URLQueryItem(name: "restrictSearchableAttributes", value: "url"))
+        }
+        components.queryItems = items
         guard let url = components.url else { throw HNError.invalidURL }
         let response: SearchResponse = try await get(url.absoluteString, decoder: algoliaDecoder)
         return response.hits

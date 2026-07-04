@@ -58,6 +58,8 @@ struct FeedView: View {
 
     @Environment(SettingsStore.self) private var settings
     @Environment(BookmarkStore.self) private var bookmarks
+    @Environment(SavedSearchStore.self) private var savedSearches
+    @Environment(NotificationService.self) private var notifications
     @Environment(\.scenePhase) private var scenePhase
 
     /// On returning to the app, offer a refresh if the index is stale. While a
@@ -77,7 +79,20 @@ struct FeedView: View {
         Haptics.tap()
         withAnimation(.snappy) { showRefreshPill = false }
         scrollToTopSignal += 1
+        await reloadAndCheck()
+    }
+
+    /// Reload the feed, then re-run notifying saved searches against fresh data.
+    private func reloadAndCheck() async {
         await vm.reload()
+        await savedSearches.check(using: LiveHNService.shared)
+    }
+
+    /// Open the story from a tapped saved-search notification, then clear it.
+    private func openPendingNotification() {
+        guard let id = notifications.pendingItemID else { return }
+        notifications.pendingItemID = nil
+        path.append(HNItem(id: id))
     }
 
     /// Reload if the index is stale (the same threshold the resume pill uses).
@@ -134,7 +149,10 @@ struct FeedView: View {
                 checkStaleOnResume()
             }
         }
+        .onChange(of: notifications.pendingItemID) { _, _ in openPendingNotification() }
         .task {
+            // Handle a notification tapped before the feed appeared (cold launch).
+            openPendingNotification()
             await vm.startIfNeeded()
             #if DEBUG
             if LaunchArgs.autoOpenFirst, path.isEmpty, let first = vm.stories.first {
@@ -179,7 +197,7 @@ struct FeedView: View {
             .background(Theme.background)
             .refreshable {
             if showRefreshPill { withAnimation(.snappy) { showRefreshPill = false } }
-            await vm.reload()
+            await reloadAndCheck()
         }
         default:
             storyList

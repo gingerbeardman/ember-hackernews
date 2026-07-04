@@ -10,6 +10,8 @@ struct EmberApp: App {
     @State private var voteStore = VoteStore()
     @State private var pendingComments = PendingCommentStore()
     @State private var favorites = FavoritesStore()
+    @State private var savedSearches = SavedSearchStore()
+    @State private var notifications = NotificationService.shared
 
     var body: some Scene {
         WindowGroup {
@@ -22,7 +24,10 @@ struct EmberApp: App {
                 .environment(voteStore)
                 .environment(pendingComments)
                 .environment(favorites)
+                .environment(savedSearches)
+                .environment(notifications)
                 .task {
+                    notifications.configure()
                     await account.restore()
                     if let username = account.username {
                         await favorites.refresh(username: username)

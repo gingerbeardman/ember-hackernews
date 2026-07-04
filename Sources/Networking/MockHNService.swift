@@ -71,7 +71,7 @@ struct MockHNService: HNServicing {
         )
     }
 
-    func search(_ query: String, mode: SearchMode, page: Int) async throws -> [SearchHit] {
+    func search(_ query: String, mode: SearchMode, page: Int, restrictToURL: Bool) async throws -> [SearchHit] {
         Self.sampleStories.map {
             SearchHit(objectID: String($0.id), title: $0.title, url: $0.url,
                       author: $0.by, points: $0.score, numComments: $0.descendants,

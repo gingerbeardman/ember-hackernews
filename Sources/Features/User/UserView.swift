@@ -4,11 +4,16 @@ struct UserView: View {
     let username: String
     @State private var vm: UserViewModel
     @Environment(\.openURL) private var openURL
+    @Environment(AccountStore.self) private var account
 
     init(username: String) {
         self.username = username
         _vm = State(initialValue: UserViewModel(username: username))
     }
+
+    /// True when this is the signed-in user's own profile (the Me tab), where we
+    /// surface saved-search management.
+    private var isOwnProfile: Bool { username == account.username }
 
     var body: some View {
         ScrollView {
@@ -31,6 +36,14 @@ struct UserView: View {
         .navigationTitle(username)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if isOwnProfile {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink { SavedSearchesView() } label: {
+                        Image(systemName: "bell.badge")
+                    }
+                    .accessibilityLabel("Saved Searches")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     openURL(URL(string: "https://news.ycombinator.com/user?id=\(username)")!)

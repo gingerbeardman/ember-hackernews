@@ -88,6 +88,7 @@ struct MobileRootView: View {
     @State private var storiesReselect = 0
     @Environment(SettingsStore.self) private var settings
     @Environment(AccountStore.self) private var account
+    @Environment(NotificationService.self) private var notifications
 
     enum Tab: Hashable { case stories, search, me, saved, settings }
 
@@ -129,6 +130,11 @@ struct MobileRootView: View {
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
                 .tag(Tab.settings)
+        }
+        // A tapped saved-search notification opens its story in the Stories tab;
+        // FeedView consumes the pending id and pushes the detail view.
+        .onChange(of: notifications.pendingItemID) { _, id in
+            if id != nil { selectedTab = .stories }
         }
         .onAppear {
             #if DEBUG

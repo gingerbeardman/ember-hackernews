@@ -21,6 +21,7 @@ struct SettingsView: View {
                 readingSection($settings)
                 accountSection($settings)
                 accessibilitySection($settings)
+                savedSearchesSection
                 personalizeSection
                 dataSection
                 aboutSection
@@ -172,6 +173,20 @@ struct SettingsView: View {
             Text("Accessibility")
         } footer: {
             Text("Adds shapes and labels so status never depends on color alone. The app also follows your system accessibility settings.")
+        }
+    }
+
+    // MARK: Saved Searches
+
+    private var savedSearchesSection: some View {
+        Section {
+            NavigationLink {
+                SavedSearchesView()
+            } label: {
+                Label("Saved Searches", systemImage: "bell.badge")
+            }
+        } footer: {
+            Text("Get notified when new stories match a saved search — like links to your website.")
         }
     }
 

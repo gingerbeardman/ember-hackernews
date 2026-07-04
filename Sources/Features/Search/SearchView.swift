@@ -3,6 +3,8 @@ import SwiftUI
 struct SearchView: View {
     @State private var vm = SearchViewModel()
     @State private var path = NavigationPath()
+    @State private var showingSave = false
+    @Environment(SettingsStore.self) private var settings
 
     private let suggestions = ["Swift", "AI", "Rust", "Startups", "Security", "Apple", "Postgres"]
 
@@ -12,6 +14,9 @@ struct SearchView: View {
                 .navigationTitle("Search")
                 .navigationDestination(for: HNItem.self) { StoryDetailView(item: $0) }
                 .navigationDestination(for: UserRoute.self) { UserView(username: $0.username) }
+                .sheet(isPresented: $showingSave) {
+                    AddSavedSearchView(initialQuery: vm.query)
+                }
         }
         .searchable(text: $vm.query, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: "Search stories and discussions")
@@ -50,23 +55,41 @@ struct SearchView: View {
 
     private var resultsList: some View {
         List {
-            Section {
-                ForEach(vm.results) { story in
-                    ZStack {
-                        NavigationLink(value: story) { EmptyView() }.opacity(0)
-                        StoryRow(item: story,
-                                 onSelectUser: { path.append(UserRoute(username: $0)) })
-                    }
-                    .listRowInsets(EdgeInsets(top: 0, leading: Spacing.l, bottom: 0, trailing: Spacing.l))
-                    .listRowSeparatorTint(Theme.separator)
-                    .listRowBackground(Theme.background)
+            ForEach(vm.results) { story in
+                ZStack {
+                    NavigationLink(value: story) { EmptyView() }.opacity(0)
+                    StoryRow(item: story,
+                             onSelectUser: { path.append(UserRoute(username: $0)) })
                 }
-            } header: {
-                modePicker
+                .listRowInsets(EdgeInsets(top: 0, leading: Spacing.l, bottom: 0, trailing: Spacing.l))
+                .listRowSeparatorTint(Theme.separator)
+                .listRowBackground(Theme.background)
             }
         }
         .listStyle(.plain)
+        .contentMargins(.top, 0, for: .scrollContent)
         .scrollContentBackground(.hidden)
+        .background(Theme.background)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            resultsHeader
+        }
+    }
+
+    private var resultsHeader: some View {
+        HStack(spacing: Spacing.m) {
+            modePicker
+
+            Button { showingSave = true } label: {
+                Image(systemName: "bell.badge")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(settings.accent.color)
+            .accessibilityLabel("Save Search")
+        }
+        .padding(.horizontal, Spacing.l)
+        .padding(.top, Spacing.xs)
+        .padding(.bottom, Spacing.s)
         .background(Theme.background)
     }
 
@@ -81,9 +104,6 @@ struct SearchView: View {
         }
         .pickerStyle(.segmented)
         .textCase(nil)
-        .padding(.vertical, Spacing.xs)
-        .listRowInsets(EdgeInsets(top: Spacing.s, leading: Spacing.l, bottom: Spacing.s, trailing: Spacing.l))
-        .listRowBackground(Theme.background)
     }
 
     private var suggestionsView: some View {
