@@ -24,6 +24,10 @@ struct FeedView: View {
     /// We resumed while a detail page was open; re-check staleness when the user
     /// returns to the index so the detail view is left undisturbed.
     @State private var staleCheckPending = false
+    /// Bumped to scroll the list to the top; the re-tap and the refresh pill both
+    /// funnel through this so they share one scroll-to-top path (the proxy lives
+    /// inside `storyList`, out of reach of the pill's action).
+    @State private var scrollToTopSignal = 0
     @State private var logoHidden = false
     @State private var logoOpacity: CGFloat = 1
     @State private var logoOffset: CGFloat = 0
@@ -72,6 +76,7 @@ struct FeedView: View {
     private func refreshFromPill() async {
         Haptics.tap()
         withAnimation(.snappy) { showRefreshPill = false }
+        scrollToTopSignal += 1
         await vm.reload()
     }
 
@@ -256,10 +261,13 @@ struct FeedView: View {
             await vm.reload()
         }
         .onChange(of: reselectSignal) { _, _ in
+            scrollToTopSignal += 1
+            refreshIfStale()
+        }
+        .onChange(of: scrollToTopSignal) { _, _ in
             if let first = vm.stories.first {
                 withAnimation(.snappy) { proxy.scrollTo(first.id, anchor: .top) }
             }
-            refreshIfStale()
         }
         }
     }
