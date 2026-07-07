@@ -59,6 +59,7 @@ struct FeedView: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(BookmarkStore.self) private var bookmarks
     @Environment(SavedSearchStore.self) private var savedSearches
+    @Environment(MatchInboxStore.self) private var matchInbox
     @Environment(NotificationService.self) private var notifications
     @Environment(\.scenePhase) private var scenePhase
 
@@ -85,7 +86,7 @@ struct FeedView: View {
     /// Reload the feed, then re-run notifying saved searches against fresh data.
     private func reloadAndCheck() async {
         await vm.reload()
-        await savedSearches.check(using: LiveHNService.shared)
+        await savedSearches.check(using: LiveHNService.shared, recordingInto: matchInbox)
     }
 
     /// Open the story from a tapped saved-search notification, then clear it.

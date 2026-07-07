@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Environment(ReadStore.self) private var readStore
     @Environment(BookmarkStore.self) private var bookmarks
     @Environment(AccountStore.self) private var account
+    @Environment(MatchInboxStore.self) private var matchInbox
     @Environment(\.openURL) private var openURL
 
     @State private var confirmClearRead = false
@@ -183,8 +184,9 @@ struct SettingsView: View {
             NavigationLink {
                 SavedSearchesView()
             } label: {
-                Label("Saved Searches", systemImage: "bell.badge")
+                Label("Saved Searches", systemImage: "bell")
             }
+            .badge(matchInbox.unreadCount)
         } footer: {
             Text("Get notified when new stories match a saved search — like links to your website.")
         }

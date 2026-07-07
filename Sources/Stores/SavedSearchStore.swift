@@ -58,8 +58,9 @@ final class SavedSearchStore {
     // MARK: Checking
 
     /// Re-run every notifying search and notify for matches newer than each
-    /// search's high-water mark. Called after a feed refresh.
-    func check(using service: HNServicing) async {
+    /// search's high-water mark. Called after a feed refresh. New matches are
+    /// also recorded into `inbox` for the in-app list and unread badge.
+    func check(using service: HNServicing, recordingInto inbox: MatchInboxStore) async {
         guard !isChecking else { return }
         isChecking = true
         defer { isChecking = false }
@@ -72,6 +73,7 @@ final class SavedSearchStore {
             guard !fresh.isEmpty else { continue }
 
             notify(fresh, for: search)
+            inbox.record(fresh, for: search)
             let highest = hits.compactMap(\.itemID).max() ?? search.lastSeenMaxID
             searches[index].lastSeenMaxID = max(search.lastSeenMaxID, highest)
             changed = true
@@ -94,22 +96,28 @@ final class SavedSearchStore {
     }
 
     /// Post notifications for new matches: up to a few individually, then a
-    /// single summary for the remainder.
+    /// single summary for the remainder. The saved search is the title so
+    /// Notification Centre groups results by search; the body is the story.
     private func notify(_ hits: [SearchHit], for search: SavedSearch) {
+        let thread = search.id.uuidString
         let sorted = hits.sorted { ($0.itemID ?? 0) > ($1.itemID ?? 0) }
         let individual = sorted.prefix(Self.maxIndividualNotifications)
         for hit in individual {
+            let source = hit.host.map { " — \($0)" } ?? ""
             notifier.post(
-                title: "New on Hacker News",
-                body: "\(hit.title ?? "Untitled") — \(hit.host ?? search.displayLabel)",
-                itemID: hit.itemID)
+                title: search.displayLabel,
+                body: "\(hit.title ?? "Untitled")\(source)",
+                itemID: hit.itemID,
+                threadID: thread)
         }
-        let overflow = sorted.count - individual.count
+        let remainder = sorted.dropFirst(individual.count)
+        let overflow = remainder.count
         if overflow > 0 {
             notifier.post(
-                title: "New matches for \(search.displayLabel)",
+                title: search.displayLabel,
                 body: "\(overflow) more new \(overflow == 1 ? "story" : "stories") on Hacker News",
-                itemID: nil)
+                itemID: remainder.first?.itemID,
+                threadID: thread)
         }
     }
 

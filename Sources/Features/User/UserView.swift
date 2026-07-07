@@ -5,6 +5,7 @@ struct UserView: View {
     @State private var vm: UserViewModel
     @Environment(\.openURL) private var openURL
     @Environment(AccountStore.self) private var account
+    @Environment(MatchInboxStore.self) private var matchInbox
 
     init(username: String) {
         self.username = username
@@ -39,7 +40,8 @@ struct UserView: View {
             if isOwnProfile {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink { SavedSearchesView() } label: {
-                        Image(systemName: "bell.badge")
+                        Image(systemName: "bell")
+                            .iconCountBadge(matchInbox.unreadCount)
                     }
                     .accessibilityLabel("Saved Searches")
                 }

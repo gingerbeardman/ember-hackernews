@@ -6,12 +6,38 @@ import UIKit
 /// (the Me tab, or Settings when signed out).
 struct SavedSearchesView: View {
     @Environment(SavedSearchStore.self) private var store
+    @Environment(MatchInboxStore.self) private var inbox
     @Environment(NotificationService.self) private var notifications
     @Environment(\.openURL) private var openURL
     @State private var showingAdd = false
+    /// The match the user tapped through to; drives navigation independently of
+    /// the inbox so removing the match on read doesn't cancel the push.
+    @State private var openedStory: HNItem?
 
     var body: some View {
         Form {
+            if !inbox.matches.isEmpty {
+                Section("Recent Matches") {
+                    ForEach(inbox.matches) { match in
+                        Button {
+                            // Read it: navigate, then drop it from the inbox.
+                            openedStory = HNItem(id: match.id, title: match.title)
+                            inbox.remove(match.id)
+                        } label: {
+                            matchRow(for: match)
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                inbox.remove(match.id)
+                            } label: {
+                                Label("Dismiss", systemImage: "xmark.bin")
+                            }
+                        }
+                    }
+                }
+            }
+
             if store.searches.isEmpty {
                 Section {
                     EmptyStateView(
@@ -28,6 +54,8 @@ struct SavedSearchesView: View {
                     .onDelete { offsets in
                         for index in offsets { store.remove(store.searches[index].id) }
                     }
+                } header: {
+                    Text("Searches")
                 } footer: {
                     Text("Checked each time you refresh the Stories feed. New matches arrive as notifications.")
                 }
@@ -47,6 +75,7 @@ struct SavedSearchesView: View {
         }
         .navigationTitle("Saved Searches")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $openedStory) { StoryDetailView(item: $0) }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingAdd = true } label: { Image(systemName: "plus") }
@@ -55,6 +84,32 @@ struct SavedSearchesView: View {
         }
         .sheet(isPresented: $showingAdd) { AddSavedSearchView() }
         .task { await notifications.refreshStatus() }
+    }
+
+    private func matchRow(for match: MatchRecord) -> some View {
+        HStack(spacing: Spacing.m) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(match.title)
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(2)
+                Text(subtitle(for: match))
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            Spacer(minLength: Spacing.m)
+            Image(systemName: "chevron.forward")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .contentShape(.rect)
+    }
+
+    /// "Nintendo · nintendo.com · 2h" — search, source domain, and age.
+    private func subtitle(for match: MatchRecord) -> String {
+        [match.searchLabel, match.host, RelativeTime.compact(match.date)]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
     }
 
     private func row(for search: SavedSearch) -> some View {

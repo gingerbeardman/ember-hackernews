@@ -11,6 +11,7 @@ struct EmberApp: App {
     @State private var pendingComments = PendingCommentStore()
     @State private var favorites = FavoritesStore()
     @State private var savedSearches = SavedSearchStore()
+    @State private var matchInbox = MatchInboxStore()
     @State private var notifications = NotificationService.shared
 
     var body: some Scene {
@@ -25,6 +26,7 @@ struct EmberApp: App {
                 .environment(pendingComments)
                 .environment(favorites)
                 .environment(savedSearches)
+                .environment(matchInbox)
                 .environment(notifications)
                 .task {
                     notifications.configure()

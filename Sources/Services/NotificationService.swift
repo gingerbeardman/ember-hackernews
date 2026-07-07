@@ -37,16 +37,24 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         await MainActor.run { authorizationStatus = status }
     }
 
-    /// Post a local notification immediately (no trigger).
-    func post(title: String, body: String, itemID: Int?) {
+    /// Post a local notification immediately (no trigger). `threadID` groups
+    /// notifications in Notification Centre (iOS groups by thread identifier, not
+    /// by title), so all matches for one saved search stack together.
+    func post(title: String, body: String, itemID: Int?, threadID: String? = nil) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
+        if let threadID { content.threadIdentifier = threadID }
         if let itemID { content.userInfo = ["itemID": itemID] }
         let request = UNNotificationRequest(identifier: UUID().uuidString,
                                             content: content, trigger: nil)
         center.add(request)
+    }
+
+    /// Set the app icon badge (used to mirror the unread saved-search matches).
+    func setBadgeCount(_ count: Int) {
+        center.setBadgeCount(count)
     }
 
     // MARK: UNUserNotificationCenterDelegate

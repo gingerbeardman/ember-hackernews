@@ -89,6 +89,7 @@ struct MobileRootView: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(AccountStore.self) private var account
     @Environment(NotificationService.self) private var notifications
+    @Environment(MatchInboxStore.self) private var matchInbox
 
     enum Tab: Hashable { case stories, search, me, saved, settings }
 
@@ -122,6 +123,7 @@ struct MobileRootView: View {
                         .navigationDestination(for: UserRoute.self) { UserView(username: $0.username) }
                 }
                 .tabItem { Label("Me", systemImage: "person.crop.circle.fill") }
+                .badge(matchInbox.unreadCount)
                 .tag(Tab.me)
             }
             SavedView()

@@ -73,6 +73,37 @@ struct MonogramAvatar: View {
     }
 }
 
+/// Matches the system notification badge (as on tab items / the app icon) for
+/// use on a nav-bar icon, where SwiftUI's native `.badge` doesn't render before
+/// iOS 26. Red circle, white text, no ring — snug to the icon's top-trailing.
+/// Hidden when `count` is 0.
+struct IconCountBadge: ViewModifier {
+    let count: Int
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .topTrailing) {
+            if count > 0 {
+                Text(count > 99 ? "99+" : "\(count)")
+                    .font(.system(size: 12, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 4)
+                    .frame(minWidth: 18, minHeight: 18)
+                    .background(Color.red, in: Capsule())
+                    .offset(x: 8, y: -8)
+                    .accessibilityLabel("\(count) new")
+            }
+        }
+    }
+}
+
+extension View {
+    /// System-style unread count badge on a nav-bar icon.
+    func iconCountBadge(_ count: Int) -> some View {
+        modifier(IconCountBadge(count: count))
+    }
+}
+
 /// Numeric rank badge for feed ordering — a non-color cue for position.
 struct RankBadge: View {
     let rank: Int
