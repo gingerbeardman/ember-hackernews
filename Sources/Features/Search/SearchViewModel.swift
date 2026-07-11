@@ -5,18 +5,22 @@ import Observation
 @Observable
 final class SearchViewModel {
     var query = ""
-    var mode: SearchMode = .relevance
+    var mode: SearchMode
     private(set) var results: [HNItem] = []
     private(set) var phase: SearchPhase = .idle
 
     private let service: HNServicing
+    private let defaults: UserDefaults
+    private static let modeKey = "search.mode"
 
     enum SearchPhase: Equatable {
         case idle, searching, results, empty, failed(String)
     }
 
-    init(service: HNServicing = LiveHNService.shared) {
+    init(service: HNServicing = LiveHNService.shared, defaults: UserDefaults = .standard) {
         self.service = service
+        self.defaults = defaults
+        mode = SearchMode(rawValue: defaults.string(forKey: Self.modeKey) ?? "") ?? .relevance
     }
 
     func runSearch() async {
@@ -50,6 +54,7 @@ final class SearchViewModel {
     func setMode(_ newMode: SearchMode) async {
         guard newMode != mode else { return }
         mode = newMode
+        defaults.set(newMode.rawValue, forKey: Self.modeKey)
         await runSearch()
     }
 }
