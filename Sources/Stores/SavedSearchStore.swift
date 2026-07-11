@@ -11,6 +11,8 @@ final class SavedSearchStore {
 
     /// Max individual notifications per check before we collapse into a summary.
     private static let maxIndividualNotifications = 3
+    /// Avoid unbounded API traffic for exceptionally broad or long-neglected searches.
+    private static let maxSearchPagesPerCheck = 10
 
     @ObservationIgnored private let fileURL: URL
     @ObservationIgnored private let notifier: NotificationService
@@ -32,12 +34,15 @@ final class SavedSearchStore {
     /// match so the existing backlog stays silent. Returns the created search.
     @discardableResult
     func add(query: String, scope: SavedSearch.Scope, notify: Bool,
-             using service: HNServicing) async -> SavedSearch {
+             using service: HNServicing, recordingInto inbox: MatchInboxStore) async -> SavedSearch {
         var search = SavedSearch(query: query, scope: scope, notify: notify)
-        let hits = await matches(for: search, using: service)
+        let hits = await matches(for: search, using: service, fetchUntilHighWaterMark: false)
         search.lastSeenMaxID = hits.compactMap(\.itemID).max() ?? 0
         searches.insert(search, at: 0)
         persist()
+        // Surface the initial run immediately in Recent Matches, but keep the
+        // high-water mark seeded so existing stories do not fire notifications.
+        inbox.record(hits, for: search)
         if notify { await notifier.requestAuthorization() }
         return search
     }
@@ -68,7 +73,7 @@ final class SavedSearchStore {
         var changed = false
         for index in searches.indices where searches[index].notify {
             let search = searches[index]
-            let hits = await matches(for: search, using: service)
+            let hits = await matches(for: search, using: service, fetchUntilHighWaterMark: true)
             let fresh = hits.filter { ($0.itemID ?? 0) > search.lastSeenMaxID }
             guard !fresh.isEmpty else { continue }
 
@@ -84,13 +89,39 @@ final class SavedSearchStore {
     // MARK: Matching
 
     /// Run a search and, for `.domain` scope, keep only exact-host matches.
-    private func matches(for search: SavedSearch, using service: HNServicing) async -> [SearchHit] {
+    private func matches(for search: SavedSearch, using service: HNServicing,
+                         fetchUntilHighWaterMark: Bool) async -> [SearchHit] {
         let query = search.trimmedQuery
         guard query.count >= 2 else { return [] }
-        let hits = (try? await service.search(
-            query, mode: .recent, page: 0,
-            restrictToURL: search.scope == .domain)) ?? []
-        guard search.scope == .domain else { return hits }
+        var hits: [SearchHit] = []
+        let shouldPaginate = fetchUntilHighWaterMark && search.lastSeenMaxID > 0
+        for page in 0..<(shouldPaginate ? Self.maxSearchPagesPerCheck : 1) {
+            guard let pageHits = try? await service.search(
+                query, mode: .recent, page: page,
+                restrictToURL: search.scope == .domain) else { break }
+            hits.append(contentsOf: pageHits)
+            // Results are newest-first. Once a page reaches an item we have
+            // already considered, no following page can contain a new match.
+            if pageHits.isEmpty || pageHits.contains(where: { ($0.itemID ?? 0) <= search.lastSeenMaxID }) {
+                break
+            }
+        }
+        guard search.scope == .domain else {
+            // Algolia applies typo tolerance and other relevance heuristics, which
+            // can return stories that do not actually contain the saved terms.
+            // Saved-search notifications should be deterministic: require every
+            // whitespace-delimited term in the title, URL, or story text.
+            let terms = query.split(whereSeparator: \Character.isWhitespace).map {
+                String($0).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            }
+            return hits.filter { hit in
+                let searchable = [hit.title, hit.url, hit.storyText]
+                    .compactMap { $0 }
+                    .joined(separator: " ")
+                    .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                return terms.allSatisfy(searchable.contains)
+            }
+        }
         let host = search.normalizedHost
         return hits.filter { $0.host?.lowercased() == host }
     }

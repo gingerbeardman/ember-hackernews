@@ -9,6 +9,7 @@ struct DesktopRootView: View {
     @Environment(ReadStore.self) private var readStore
     @Environment(LinkOpener.self) private var linkOpener
     @Environment(AccountStore.self) private var account
+    @Environment(NotificationService.self) private var notifications
 
     // Optional so the single-selection `List(selection:)` resolves to the
     // iOS/Catalyst-available initializer.
@@ -53,7 +54,19 @@ struct DesktopRootView: View {
             default: break
             }
             #endif
+            openPendingNotification()
         }
+        .onChange(of: notifications.pendingItemID) { _, _ in
+            openPendingNotification()
+        }
+    }
+
+    /// Open a saved-search notification directly in the detail column.
+    private func openPendingNotification() {
+        guard let id = notifications.pendingItemID else { return }
+        notifications.pendingItemID = nil
+        section = .feed(settings.defaultFeed)
+        selectedStory = HNItem(id: id)
     }
 
     // MARK: Sidebar

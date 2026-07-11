@@ -137,6 +137,7 @@ struct SavedSearchesView: View {
 /// Sheet for creating a saved search. Can be prefilled (e.g. from the Search tab).
 struct AddSavedSearchView: View {
     @Environment(SavedSearchStore.self) private var store
+    @Environment(MatchInboxStore.self) private var inbox
     @Environment(\.dismiss) private var dismiss
 
     @State private var query: String
@@ -197,7 +198,7 @@ struct AddSavedSearchView: View {
                         isSaving = true
                         Task {
                             await store.add(query: query, scope: scope, notify: notify,
-                                            using: LiveHNService.shared)
+                                            using: LiveHNService.shared, recordingInto: inbox)
                             dismiss()
                         }
                     }
