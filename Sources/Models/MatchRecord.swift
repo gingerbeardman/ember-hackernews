@@ -10,6 +10,9 @@ struct MatchRecord: Codable, Identifiable, Hashable {
     let id: Int
     var title: String
     var host: String?
+    /// Stable owner used to enforce the per-search inbox limit. Optional so
+    /// inboxes written by older versions continue to decode.
+    var searchID: UUID?
     /// The saved search that produced this match, e.g. "Nintendo".
     var searchLabel: String
     var date: Date

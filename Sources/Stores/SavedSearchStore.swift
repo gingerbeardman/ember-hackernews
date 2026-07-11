@@ -53,11 +53,26 @@ final class SavedSearchStore {
     }
 
     /// Toggle notifications for a search, requesting authorization when enabling.
-    func setNotify(_ notify: Bool, for id: UUID) async {
+    func setNotify(_ notify: Bool, for id: UUID, using service: HNServicing,
+                   recordingInto inbox: MatchInboxStore) async {
         guard let index = searches.firstIndex(where: { $0.id == id }) else { return }
         searches[index].notify = notify
         persist()
-        if notify { await notifier.requestAuthorization() }
+        guard notify else { return }
+        await notifier.requestAuthorization()
+
+        // A disabled search may have fallen behind. Re-enabling it is an
+        // explicit request to catch up immediately rather than waiting for the
+        // next Stories refresh.
+        let search = searches[index]
+        let hits = await matches(for: search, using: service, fetchUntilHighWaterMark: true)
+        let fresh = hits.filter { ($0.itemID ?? 0) > search.lastSeenMaxID }
+        guard !fresh.isEmpty else { return }
+        notify(fresh, for: search)
+        inbox.record(fresh, for: search)
+        let highest = hits.compactMap(\.itemID).max() ?? search.lastSeenMaxID
+        searches[index].lastSeenMaxID = max(search.lastSeenMaxID, highest)
+        persist()
     }
 
     // MARK: Checking

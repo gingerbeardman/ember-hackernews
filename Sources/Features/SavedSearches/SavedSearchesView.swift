@@ -10,6 +10,8 @@ struct SavedSearchesView: View {
     @Environment(NotificationService.self) private var notifications
     @Environment(\.openURL) private var openURL
     @State private var showingAdd = false
+    @State private var selectingMatches = false
+    @State private var selectedMatchIDs: Set<Int> = []
     /// The match the user tapped through to; drives navigation independently of
     /// the inbox so removing the match on read doesn't cancel the push.
     @State private var openedStory: HNItem?
@@ -20,11 +22,25 @@ struct SavedSearchesView: View {
                 Section("Recent Matches") {
                     ForEach(inbox.matches) { match in
                         Button {
+                            if selectingMatches {
+                                if !selectedMatchIDs.insert(match.id).inserted {
+                                    selectedMatchIDs.remove(match.id)
+                                }
+                                return
+                            }
                             // Read it: navigate, then drop it from the inbox.
                             openedStory = HNItem(id: match.id, title: match.title)
                             inbox.remove(match.id)
                         } label: {
-                            matchRow(for: match)
+                            HStack {
+                                if selectingMatches {
+                                    Image(systemName: selectedMatchIDs.contains(match.id)
+                                          ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(selectedMatchIDs.contains(match.id)
+                                                         ? Color.accentColor : Theme.textSecondary)
+                                }
+                                matchRow(for: match)
+                            }
                         }
                         .buttonStyle(.plain)
                         .swipeActions(edge: .trailing) {
@@ -77,9 +93,37 @@ struct SavedSearchesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $openedStory) { StoryDetailView(item: $0) }
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if selectingMatches {
+                    Button("Done") {
+                        selectingMatches = false
+                        selectedMatchIDs.removeAll()
+                    }
+                } else if !inbox.matches.isEmpty {
+                    Menu {
+                        Button("Select Matches", systemImage: "checkmark.circle") {
+                            selectingMatches = true
+                        }
+                        Button("Mark All as Read", systemImage: "checkmark.circle.fill") {
+                            inbox.removeAll()
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showingAdd = true } label: { Image(systemName: "plus") }
-                    .accessibilityLabel("Add Saved Search")
+                if selectingMatches {
+                    Button("Delete", role: .destructive) {
+                        inbox.remove(selectedMatchIDs)
+                        selectedMatchIDs.removeAll()
+                        selectingMatches = false
+                    }
+                    .disabled(selectedMatchIDs.isEmpty)
+                } else {
+                    Button { showingAdd = true } label: { Image(systemName: "plus") }
+                        .accessibilityLabel("Add Saved Search")
+                }
             }
         }
         .sheet(isPresented: $showingAdd) { AddSavedSearchView() }
@@ -127,7 +171,13 @@ struct SavedSearchesView: View {
             Spacer()
             Toggle("Notify", isOn: Binding(
                 get: { search.notify },
-                set: { newValue in Task { await store.setNotify(newValue, for: search.id) } }
+                set: { newValue in
+                    Task {
+                        await store.setNotify(newValue, for: search.id,
+                                              using: LiveHNService.shared,
+                                              recordingInto: inbox)
+                    }
+                }
             ))
             .labelsHidden()
         }
