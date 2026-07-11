@@ -68,7 +68,7 @@ final class SavedSearchStore {
         let hits = await matches(for: search, using: service, fetchUntilHighWaterMark: true)
         let fresh = hits.filter { ($0.itemID ?? 0) > search.lastSeenMaxID }
         guard !fresh.isEmpty else { return }
-        notify(fresh, for: search)
+        self.notify(fresh, for: search)
         inbox.record(fresh, for: search)
         let highest = hits.compactMap(\.itemID).max() ?? search.lastSeenMaxID
         searches[index].lastSeenMaxID = max(search.lastSeenMaxID, highest)
