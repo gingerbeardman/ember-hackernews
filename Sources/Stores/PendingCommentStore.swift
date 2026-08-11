@@ -69,11 +69,15 @@ final class PendingCommentStore {
     /// Drop pending comments for this story whose text now appears for real, or
     /// that have aged out.
     func reconcile(storyID: Int, against realTexts: [(author: String, body: String)]) {
-        let realKeys = Set(realTexts.map { Self.matchKey(author: $0.author, body: $0.body) })
+        let reals: [(author: String, body: String)] = realTexts.map {
+            (author: $0.author.lowercased(), body: Self.normalizedBody($0.body))
+        }
         pending.removeAll { p in
             guard p.storyID == storyID else { return false }
             if Date().timeIntervalSince(p.createdAt) >= maxAge { return true }
-            return realKeys.contains(Self.matchKey(author: p.author, body: p.text))
+            let author = p.author.lowercased()
+            let body = Self.normalizedBody(p.text)
+            return reals.contains { $0.author == author && Self.bodiesMatch(body, $0.body) }
         }
         persist()
     }
@@ -84,7 +88,7 @@ final class PendingCommentStore {
         edits.removeAll { e in
             if Date().timeIntervalSince(e.createdAt) >= maxAge { return true }
             guard let body = realByID[e.commentID] else { return false } // not in view; keep
-            return Self.matchKey(author: "", body: body) == Self.matchKey(author: "", body: e.text)
+            return Self.bodiesMatch(Self.normalizedBody(body), Self.normalizedBody(e.text))
         }
         persist()
     }
@@ -101,8 +105,25 @@ final class PendingCommentStore {
     /// Loose identity for a comment: author + a normalised prefix of its text,
     /// so HN's rendered HTML can be matched against the raw source we posted.
     static func matchKey(author: String, body: String) -> String {
-        let stripped = body.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
-        let normalized = stripped.lowercased().filter { $0.isLetter || $0.isNumber }
-        return author.lowercased() + "|" + String(normalized.prefix(60))
+        author.lowercased() + "|" + String(normalizedBody(body).prefix(60))
+    }
+
+    /// Decode entities, strip tags, keep letters/digits only so HTML from Algolia
+    /// and the plain text we stored for the phantom comment land on the same key.
+    static func normalizedBody(_ body: String) -> String {
+        let decoded = HTMLRenderer.decodeEntities(body)
+        let stripped = decoded.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+        return stripped.lowercased().filter { $0.isLetter || $0.isNumber }
+    }
+
+    /// Exact match, or one body contains the other (HN may rewrite URLs / wrap
+    /// text so the rendered form is a superset of what the user typed).
+    static func bodiesMatch(_ a: String, _ b: String) -> Bool {
+        if a.isEmpty || b.isEmpty { return false }
+        if a == b { return true }
+        // Require a meaningful prefix so short comments don't false-match.
+        let minLen = 16
+        guard a.count >= minLen || b.count >= minLen else { return false }
+        return a.hasPrefix(b) || b.hasPrefix(a) || a.contains(b) || b.contains(a)
     }
 }

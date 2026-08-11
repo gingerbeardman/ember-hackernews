@@ -7,13 +7,15 @@ struct CommentRow: View {
     let opAuthor: String?
     let isCollapsed: Bool
     var canInteract: Bool = false
-    /// Whether the upvote button is offered — false for your own comments, which
+    /// Whether vote buttons are offered — false for your own comments, which
     /// HN won't let you vote on (no arrow), while reply/edit stay available.
     var canVote: Bool = false
-    var isVoted: Bool = false
+    var isUpvoted: Bool = false
+    var isDownvoted: Bool = false
     var canEdit: Bool = false
     var onReply: () -> Void = {}
-    var onVote: () -> Void = {}
+    var onUpvote: () -> Void = {}
+    var onDownvote: () -> Void = {}
     var onEdit: () -> Void = {}
     /// Tap on a depth rail: skip to the next comment at that level.
     var onSkip: (Int) -> Void = { _ in }
@@ -126,15 +128,27 @@ struct CommentRow: View {
             if canVote {
                 Button {
                     Haptics.soft()
-                    onVote()
+                    onUpvote()
                 } label: {
-                    Label(isVoted ? "Upvoted" : "Upvote",
-                          systemImage: isVoted ? "arrow.up.circle.fill" : "arrow.up.circle")
+                    Label(isUpvoted ? "Upvoted" : "Upvote",
+                          systemImage: isUpvoted ? "arrow.up.circle.fill" : "arrow.up.circle")
                         .font(AppFont.metaStrong)
-                        .foregroundStyle(isVoted ? Theme.upvote : Theme.textSecondary)
+                        .foregroundStyle(isUpvoted ? Theme.upvote : Theme.textSecondary)
                 }
                 .buttonStyle(.plain)
-                .disabled(isVoted)
+                .accessibilityHint(isUpvoted ? "Removes your upvote" : "Upvotes this comment")
+
+                Button {
+                    Haptics.soft()
+                    onDownvote()
+                } label: {
+                    Label(isDownvoted ? "Downvoted" : "Downvote",
+                          systemImage: isDownvoted ? "arrow.down.circle.fill" : "arrow.down.circle")
+                        .font(AppFont.metaStrong)
+                        .foregroundStyle(isDownvoted ? Theme.downvote : Theme.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(isDownvoted ? "Removes your downvote" : "Downvotes this comment")
             }
 
             Button {

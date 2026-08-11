@@ -47,6 +47,8 @@ enum Theme {
 
     // Accents (semantic, not the user accent)
     static let upvote = Color(light: 0xF26B1D, dark: 0xFF8A3D)
+    /// HN-style cool blue for downvotes, distinct from the warm upvote orange.
+    static let downvote = Color(light: 0x3B6EA5, dark: 0x6FA3D9)
     static let positive = Color(light: 0x2E9E5B, dark: 0x46C97B)
     static let link = Color(light: 0x2A6FDB, dark: 0x69A0FF)
 }

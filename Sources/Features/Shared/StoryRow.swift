@@ -40,30 +40,66 @@ struct StoryRow: View {
         }
     }
 
-    /// Whether the signed-in user can upvote this item directly from the row.
+    /// Whether the signed-in user can vote on this item directly from the row.
     /// HN shows no vote arrow on your own posts, so hide the affordance there
     /// rather than letting the tap fail into the web fallback.
     private var canVote: Bool {
         settings.accountFeaturesEnabled && account.isSignedIn
             && item.kind != .job && item.author != account.username
     }
-    private var hasVoted: Bool { voteStore.hasVoted(item.id) }
-    /// Points bumped by our own optimistic upvote (HN's API count lags).
-    private var displayedPoints: Int { item.points + (hasVoted ? 1 : 0) }
+    private var hasUpvoted: Bool { voteStore.hasUpvoted(item.id) }
+    private var hasDownvoted: Bool { voteStore.hasDownvoted(item.id) }
+    /// Points adjusted by our own optimistic vote (HN's API count lags).
+    private var displayedPoints: Int { item.points + voteStore.scoreDelta(for: item.id) }
 
-    /// Optimistic native upvote; on any failure, revert and offer the web fallback.
-    private func upvote() {
-        guard canVote, !hasVoted else { return }
-        voteStore.markVoted(item.id)
+    private var writer: HNWebWriter { HNWebWriter(dataStore: account.dataStore) }
+
+    /// Tap the score: upvote when idle, unvote when already upvoted.
+    private func toggleUpvote() {
+        guard canVote else { return }
+        if hasUpvoted {
+            applyVote(.unvote, optimistic: { voteStore.clearVote(item.id) })
+        } else {
+            let previous = voteStore.direction(of: item.id)
+            applyVote(.up, optimistic: { voteStore.markUpvoted(item.id) }, revert: {
+                restoreVote(previous)
+            })
+        }
+    }
+
+    private func downvote() {
+        guard canVote else { return }
+        if hasDownvoted {
+            applyVote(.unvote, optimistic: { voteStore.clearVote(item.id) })
+        } else {
+            let previous = voteStore.direction(of: item.id)
+            applyVote(.down, optimistic: { voteStore.markDownvoted(item.id) }, revert: {
+                restoreVote(previous)
+            })
+        }
+    }
+
+    private func applyVote(_ action: HNWebWriter.VoteAction,
+                           optimistic: () -> Void,
+                           revert: (() -> Void)? = nil) {
+        optimistic()
         Haptics.soft()
         Task {
             do {
-                try await HNWebWriter(dataStore: account.dataStore).vote(itemID: item.id, up: true)
+                try await writer.vote(itemID: item.id, action: action)
             } catch {
-                voteStore.unmarkVoted(item.id)
+                if let revert { revert() } else { voteStore.clearVote(item.id) }
                 Haptics.warning()
                 webTask = .item(itemID: item.id)
             }
+        }
+    }
+
+    private func restoreVote(_ previous: VoteDirection?) {
+        switch previous {
+        case .up: voteStore.markUpvoted(item.id)
+        case .down: voteStore.markDownvoted(item.id)
+        case .none: voteStore.clearVote(item.id)
         }
     }
 
@@ -215,15 +251,16 @@ struct StoryRow: View {
         .foregroundStyle(Theme.textSecondary)
     }
 
-    /// Points stat that doubles as a one-tap upvote when signed in.
+    /// Points stat that doubles as a one-tap upvote / unvote when signed in.
     @ViewBuilder private var upvoteStat: some View {
         if canVote {
-            Button { upvote() } label: {
-                StatLabel(systemImage: hasVoted ? "arrow.up.circle.fill" : "arrow.up",
-                          value: "\(displayedPoints)", tint: Theme.upvote)
+            Button { toggleUpvote() } label: {
+                let icon = hasUpvoted ? "arrow.up.circle.fill"
+                    : (hasDownvoted ? "arrow.down.circle.fill" : "arrow.up")
+                let tint = hasDownvoted ? Theme.downvote : Theme.upvote
+                StatLabel(systemImage: icon, value: "\(displayedPoints)", tint: tint)
             }
             .buttonStyle(.plain)
-            .disabled(hasVoted)
             .accessibilityHidden(true)
         } else {
             StatLabel(systemImage: "arrow.up", value: "\(displayedPoints)", tint: Theme.upvote)
@@ -236,8 +273,17 @@ struct StoryRow: View {
         if let url = item.articleURL {
             Button("Open Link") { openArticle(url) }
         }
-        if canVote, !hasVoted {
-            Button("Upvote") { upvote() }
+        if canVote {
+            if hasUpvoted {
+                Button("Unvote") { toggleUpvote() }
+            } else {
+                Button("Upvote") { toggleUpvote() }
+            }
+            if hasDownvoted {
+                Button("Remove Downvote") { downvote() }
+            } else {
+                Button("Downvote") { downvote() }
+            }
         }
         Button(saveActionTitle) {
             toggleSaved()
@@ -260,6 +306,27 @@ struct StoryRow: View {
             } label: {
                 Label("Open Link", systemImage: "safari")
             }
+        }
+        if canVote {
+            if hasUpvoted {
+                Button { toggleUpvote() } label: {
+                    Label("Unvote", systemImage: "arrow.uturn.backward")
+                }
+            } else {
+                Button { toggleUpvote() } label: {
+                    Label("Upvote", systemImage: "arrow.up.circle")
+                }
+            }
+            if hasDownvoted {
+                Button { downvote() } label: {
+                    Label("Remove Downvote", systemImage: "arrow.uturn.backward")
+                }
+            } else {
+                Button { downvote() } label: {
+                    Label("Downvote", systemImage: "arrow.down.circle")
+                }
+            }
+            Divider()
         }
         Button {
             toggleSaved()

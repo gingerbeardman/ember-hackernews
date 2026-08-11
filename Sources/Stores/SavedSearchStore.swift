@@ -66,13 +66,15 @@ final class SavedSearchStore {
         // next Stories refresh.
         let search = searches[index]
         let hits = await matches(for: search, using: service, fetchUntilHighWaterMark: true)
-        let fresh = hits.filter { ($0.itemID ?? 0) > search.lastSeenMaxID }
+        let fresh = Self.freshMatches(hits, for: search)
+        let highest = hits.compactMap(\.itemID).max() ?? search.lastSeenMaxID
+        if highest > search.lastSeenMaxID {
+            searches[index].lastSeenMaxID = highest
+            persist()
+        }
         guard !fresh.isEmpty else { return }
         self.notify(fresh, for: search)
         inbox.record(fresh, for: search)
-        let highest = hits.compactMap(\.itemID).max() ?? search.lastSeenMaxID
-        searches[index].lastSeenMaxID = max(search.lastSeenMaxID, highest)
-        persist()
     }
 
     // MARK: Checking
@@ -89,16 +91,35 @@ final class SavedSearchStore {
         for index in searches.indices where searches[index].notify {
             let search = searches[index]
             let hits = await matches(for: search, using: service, fetchUntilHighWaterMark: true)
-            let fresh = hits.filter { ($0.itemID ?? 0) > search.lastSeenMaxID }
+            let fresh = Self.freshMatches(hits, for: search)
+            // Always advance the high-water mark from what we saw, even when
+            // nothing is fresh — so a previously empty domain watch (e.g. one
+            // that missed subdomains) does not re-scan the whole backlog.
+            let highest = hits.compactMap(\.itemID).max() ?? search.lastSeenMaxID
+            if highest > search.lastSeenMaxID {
+                searches[index].lastSeenMaxID = highest
+                changed = true
+            }
             guard !fresh.isEmpty else { continue }
 
             notify(fresh, for: search)
             inbox.record(fresh, for: search)
-            let highest = hits.compactMap(\.itemID).max() ?? search.lastSeenMaxID
-            searches[index].lastSeenMaxID = max(search.lastSeenMaxID, highest)
-            changed = true
         }
         if changed { persist() }
+    }
+
+    /// Items newer than the high-water mark. When the mark was never seeded
+    /// (`lastSeenMaxID == 0`), also require the hit to be posted after the
+    /// search was created so a first successful domain match doesn't dump the
+    /// entire historical backlog as notifications.
+    static func freshMatches(_ hits: [SearchHit], for search: SavedSearch) -> [SearchHit] {
+        hits.filter { hit in
+            guard let id = hit.itemID, id > search.lastSeenMaxID else { return false }
+            if search.lastSeenMaxID == 0, let date = hit.date, date < search.createdAt {
+                return false
+            }
+            return true
+        }
     }
 
     // MARK: Matching
@@ -137,8 +158,18 @@ final class SavedSearchStore {
                 return terms.allSatisfy(searchable.contains)
             }
         }
-        let host = search.normalizedHost
-        return hits.filter { $0.host?.lowercased() == host }
+        // Match the bare domain and any subdomain (blog.example.com when watching
+        // example.com). Exact equality alone missed most personal-site posts.
+        let domain = search.normalizedHost
+        return hits.filter { Self.host($0.host, matchesDomain: domain) }
+    }
+
+    /// `true` when `host` is `domain` or a subdomain of it (not a lookalike suffix).
+    static func host(_ host: String?, matchesDomain domain: String) -> Bool {
+        guard let host else { return false }
+        let h = host.lowercased()
+        let d = domain.lowercased()
+        return h == d || h.hasSuffix("." + d)
     }
 
     /// Post notifications for new matches: up to a few individually, then a

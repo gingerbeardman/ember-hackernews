@@ -13,6 +13,7 @@ struct EmberApp: App {
     @State private var savedSearches = SavedSearchStore()
     @State private var matchInbox = MatchInboxStore()
     @State private var notifications = NotificationService.shared
+    @State private var router = AppRouter()
 
     var body: some Scene {
         WindowGroup {
@@ -28,6 +29,7 @@ struct EmberApp: App {
                 .environment(savedSearches)
                 .environment(matchInbox)
                 .environment(notifications)
+                .environment(router)
                 .task {
                     notifications.configure()
                     await account.restore()

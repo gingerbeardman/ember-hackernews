@@ -3,8 +3,11 @@ import SwiftUI
 
 // MARK: - Navigation routes
 
-/// Pushed onto a `NavigationStack` to show a user profile.
-struct UserRoute: Hashable { let username: String }
+/// Pushed onto a `NavigationStack` (or presented as a sheet) to show a user profile.
+struct UserRoute: Hashable, Identifiable {
+    let username: String
+    var id: String { username }
+}
 
 // MARK: - In-app browser
 

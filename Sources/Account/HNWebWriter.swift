@@ -24,10 +24,23 @@ final class HNWebWriter: NSObject, WKNavigationDelegate {
         }
     }
 
+    /// Which HN vote control to click on the item page.
+    enum VoteAction {
+        case up, down, unvote
+
+        var anchorPrefix: String {
+            switch self {
+            case .up: "up"
+            case .down: "down"
+            case .unvote: "un"
+            }
+        }
+    }
+
     private enum Job {
         case submit(text: String)
         case read
-        case vote(itemID: Int, up: Bool)
+        case vote(itemID: Int, action: VoteAction)
         case favorite(on: Bool)
     }
 
@@ -68,11 +81,18 @@ final class HNWebWriter: NSObject, WKNavigationDelegate {
         _ = try await run(url: url, job: .submit(text: text))
     }
 
-    /// Upvote (or, with `up: false`, un-vote) an item by clicking HN's own vote
-    /// arrow — HN keeps the per-item `auth` token internal, so we parse nothing.
-    func vote(itemID: Int, up: Bool) async throws {
+    /// Vote on an item by clicking HN's own up / down / un-vote control — HN
+    /// keeps the per-item `auth` token internal, so we parse nothing.
+    /// Down-votes require sufficient HN karma; when the arrow is absent the call
+    /// fails with `.rejected` and the UI can fall back to the web sheet.
+    func vote(itemID: Int, action: VoteAction) async throws {
         let url = URL(string: "https://news.ycombinator.com/item?id=\(itemID)")!
-        _ = try await run(url: url, job: .vote(itemID: itemID, up: up))
+        _ = try await run(url: url, job: .vote(itemID: itemID, action: action))
+    }
+
+    /// Convenience: `true` upvotes, `false` unvotes (legacy call sites).
+    func vote(itemID: Int, up: Bool) async throws {
+        try await vote(itemID: itemID, action: up ? .up : .unvote)
     }
 
     /// Favorite (or un-favorite) an item by clicking HN's own favorite link on
@@ -115,11 +135,12 @@ final class HNWebWriter: NSObject, WKNavigationDelegate {
                 self?.finish(.success(result as? String)) // nil if the textarea is absent
             }
 
-        case .vote(let itemID, let up):
-            webView.evaluateJavaScript(Self.clickVoteJS(itemID: itemID, up: up)) { [weak self] result, _ in
+        case .vote(let itemID, let action):
+            webView.evaluateJavaScript(Self.clickVoteJS(itemID: itemID, action: action)) { [weak self] result, _ in
                 guard let self else { return }
                 guard (result as? String) == "ok" else {
-                    self.finish(.failure(PostError.rejected)) // no arrow → not logged in / already voted
+                    // no arrow → not logged in / already in that state / no downvote privilege
+                    self.finish(.failure(PostError.rejected))
                     return
                 }
                 // HN's vote fires asynchronously (an image GET); give it a moment
@@ -232,10 +253,11 @@ final class HNWebWriter: NSObject, WKNavigationDelegate {
         """
     }
 
-    /// Click HN's own up/un-vote arrow for an item. Returns `noarrow` when the
-    /// arrow is absent (not logged in, or already in that state).
-    static func clickVoteJS(itemID: Int, up: Bool) -> String {
-        let anchor = "\(up ? "up" : "un")_\(itemID)"
+    /// Click HN's own up / down / un-vote control for an item. Returns `noarrow`
+    /// when the control is absent (not logged in, already in that state, or
+    /// insufficient karma for downvotes).
+    static func clickVoteJS(itemID: Int, action: VoteAction) -> String {
+        let anchor = "\(action.anchorPrefix)_\(itemID)"
         return """
         (function(){
           var el = document.getElementById('\(anchor)');

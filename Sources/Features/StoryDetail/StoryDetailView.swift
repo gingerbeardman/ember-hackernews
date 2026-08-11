@@ -149,19 +149,53 @@ struct StoryDetailView: View {
 
     // MARK: Write actions
 
-    /// Optimistic native upvote; on any failure, revert and offer the web fallback.
-    private func upvote(_ id: Int) {
-        guard canInteract, !voteStore.hasVoted(id) else { return }
-        voteStore.markVoted(id)
+    /// Toggle an upvote: first tap upvotes, second unvotes. Optimistic; falls back to web.
+    private func toggleUpvote(_ id: Int) {
+        guard canInteract else { return }
+        if voteStore.hasUpvoted(id) {
+            applyVote(id, action: .unvote, optimistic: { voteStore.clearVote(id) })
+        } else {
+            let previous = voteStore.direction(of: id)
+            applyVote(id, action: .up, optimistic: { voteStore.markUpvoted(id) }, revert: {
+                restoreVote(id, previous)
+            })
+        }
+    }
+
+    /// Toggle a downvote (requires HN karma). Optimistic; falls back to web on rejection.
+    private func toggleDownvote(_ id: Int) {
+        guard canInteract else { return }
+        if voteStore.hasDownvoted(id) {
+            applyVote(id, action: .unvote, optimistic: { voteStore.clearVote(id) })
+        } else {
+            let previous = voteStore.direction(of: id)
+            applyVote(id, action: .down, optimistic: { voteStore.markDownvoted(id) }, revert: {
+                restoreVote(id, previous)
+            })
+        }
+    }
+
+    private func applyVote(_ id: Int, action: HNWebWriter.VoteAction,
+                           optimistic: () -> Void,
+                           revert: (() -> Void)? = nil) {
+        optimistic()
         Haptics.soft()
         Task {
             do {
-                try await writer.vote(itemID: id, up: true)
+                try await writer.vote(itemID: id, action: action)
             } catch {
-                voteStore.unmarkVoted(id)
+                if let revert { revert() } else { voteStore.clearVote(id) }
                 Haptics.warning()
                 webTask = .item(itemID: id)
             }
+        }
+    }
+
+    private func restoreVote(_ id: Int, _ previous: VoteDirection?) {
+        switch previous {
+        case .up: voteStore.markUpvoted(id)
+        case .down: voteStore.markDownvoted(id)
+        case .none: voteStore.clearVote(id)
         }
     }
 
@@ -255,15 +289,24 @@ struct StoryDetailView: View {
         HStack(spacing: Spacing.m) {
             if canVote(story.author) {
                 Button {
-                    upvote(story.id)
+                    toggleUpvote(story.id)
                 } label: {
-                    Label(voteStore.hasVoted(story.id) ? "Upvoted" : "Upvote",
-                          systemImage: voteStore.hasVoted(story.id) ? "arrow.up.circle.fill" : "arrow.up.circle")
+                    Label(voteStore.hasUpvoted(story.id) ? "Upvoted" : "Upvote",
+                          systemImage: voteStore.hasUpvoted(story.id) ? "arrow.up.circle.fill" : "arrow.up.circle")
                         .font(.subheadline.weight(.semibold))
                 }
                 .buttonStyle(.bordered)
                 .tint(Theme.upvote)
-                .disabled(voteStore.hasVoted(story.id))
+
+                Button {
+                    toggleDownvote(story.id)
+                } label: {
+                    Label(voteStore.hasDownvoted(story.id) ? "Downvoted" : "Downvote",
+                          systemImage: voteStore.hasDownvoted(story.id) ? "arrow.down.circle.fill" : "arrow.down.circle")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.downvote)
             }
 
             Button {
@@ -279,9 +322,9 @@ struct StoryDetailView: View {
         }
     }
 
-    /// Story score, bumped by our own optimistic upvote (HN's API count lags).
+    /// Story score, adjusted by our own optimistic vote (HN's API count lags).
     private var displayedPoints: Int {
-        story.points + (voteStore.hasVoted(story.id) ? 1 : 0)
+        story.points + voteStore.scoreDelta(for: story.id)
     }
 
     private func articleCard(url: URL) -> some View {
@@ -427,10 +470,12 @@ struct StoryDetailView: View {
                             isCollapsed: vm.isCollapsed(comment.id),
                             canInteract: canInteract,
                             canVote: canVote(comment.author),
-                            isVoted: voteStore.hasVoted(comment.id),
+                            isUpvoted: voteStore.hasUpvoted(comment.id),
+                            isDownvoted: voteStore.hasDownvoted(comment.id),
                             canEdit: canEdit(comment),
                             onReply: { compose(parentID: comment.id, title: "Reply", context: "Replying to \(comment.author)") },
-                            onVote: { upvote(comment.id) },
+                            onUpvote: { toggleUpvote(comment.id) },
+                            onDownvote: { toggleDownvote(comment.id) },
                             onEdit: { edit(comment) },
                             onSkip: { level in
                                 performSkip(from: comment.id, level: level, proxy: proxy)

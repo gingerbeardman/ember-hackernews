@@ -1,6 +1,6 @@
 name: Ember
 options:
-  bundleIdPrefix: com.datanoise
+  bundleIdPrefix: com.gingerbeardman
   deploymentTarget:
     iOS: "18.0"
   createIntermediateGroups: true
@@ -12,7 +12,7 @@ settings:
     MARKETING_VERSION: "1.3.0"
     CURRENT_PROJECT_VERSION: "4"
     SWIFT_VERSION: "5.0"
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: "Q3Z639YB49"
     CODE_SIGN_STYLE: Automatic
 
 targets:
@@ -26,7 +26,7 @@ targets:
     settings:
       base:
         INFOPLIST_FILE: Resources/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.datanoise.ember
+        PRODUCT_BUNDLE_IDENTIFIER: com.gingerbeardman.ember
         PRODUCT_NAME: Ember
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor

@@ -61,6 +61,7 @@ struct FeedView: View {
     @Environment(SavedSearchStore.self) private var savedSearches
     @Environment(MatchInboxStore.self) private var matchInbox
     @Environment(NotificationService.self) private var notifications
+    @Environment(AppRouter.self) private var router
     @Environment(\.scenePhase) private var scenePhase
 
     /// On returning to the app, offer a refresh if the index is stale. While a
@@ -94,6 +95,18 @@ struct FeedView: View {
         guard let id = notifications.pendingItemID else { return }
         notifications.pendingItemID = nil
         path.append(HNItem(id: id))
+    }
+
+    /// Open a deep-linked HN discussion or user profile, then clear the router.
+    private func openPendingDeepLink() {
+        if let id = router.pendingStoryID {
+            router.pendingStoryID = nil
+            path.append(HNItem(id: id))
+        }
+        if let username = router.pendingUsername {
+            router.pendingUsername = nil
+            path.append(UserRoute(username: username))
+        }
     }
 
     /// Reload if the index is stale (the same threshold the resume pill uses).
@@ -151,9 +164,12 @@ struct FeedView: View {
             }
         }
         .onChange(of: notifications.pendingItemID) { _, _ in openPendingNotification() }
+        .onChange(of: router.pendingStoryID) { _, _ in openPendingDeepLink() }
+        .onChange(of: router.pendingUsername) { _, _ in openPendingDeepLink() }
         .task {
-            // Handle a notification tapped before the feed appeared (cold launch).
+            // Handle a notification or deep link that arrived before the feed appeared.
             openPendingNotification()
+            openPendingDeepLink()
             await vm.startIfNeeded()
             #if DEBUG
             if LaunchArgs.autoOpenFirst, path.isEmpty, let first = vm.stories.first {

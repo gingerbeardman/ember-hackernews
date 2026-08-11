@@ -10,6 +10,7 @@ struct RootView: View {
     @Environment(ReadStore.self) private var readStore
     @Environment(LinkOpener.self) private var linkOpener
     @Environment(AccountStore.self) private var account
+    @Environment(AppRouter.self) private var router
     @Environment(\.openURL) private var systemOpenURL
     @Environment(\.horizontalSizeClass) private var sizeClass
 
@@ -28,7 +29,9 @@ struct RootView: View {
             applyInterfaceStyle(appearance.uiStyle)
         }
         // Route explicit article opens through the in-app browser (or system).
+        // HN item/user links open natively instead of Safari.
         .environment(\.openArticle) { url in
+            if handleHNLink(url) { return }
             if settings.openLinksInApp {
                 linkOpener.present(url, reader: settings.readerMode)
             } else {
@@ -37,12 +40,17 @@ struct RootView: View {
         }
         // Route inline comment/text links the same way, honoring reader mode.
         .environment(\.openURL, OpenURLAction { url in
+            if handleHNLink(url) { return .handled }
             if settings.openLinksInApp {
                 linkOpener.present(url, reader: settings.readerMode)
                 return .handled
             }
             return .systemAction
         })
+        // Cold-start / background open of an HN URL from another app.
+        .onOpenURL { url in
+            _ = handleHNLink(url)
+        }
         .sheet(item: $linkOpener.presented) { presented in
             SafariView(url: presented.url, entersReaderIfAvailable: presented.reader)
                 .ignoresSafeArea()
@@ -57,6 +65,20 @@ struct RootView: View {
                                                readStore: readStore, linkOpener: linkOpener,
                                                account: account))
         }
+    }
+
+    /// Intercept `news.ycombinator.com/item?id=` (and user) links so they open
+    /// as native discussions / profiles instead of Safari.
+    @discardableResult
+    private func handleHNLink(_ url: URL) -> Bool {
+        guard let link = HNLink.parse(url) else { return false }
+        switch link {
+        case .item(let id):
+            router.openHNItem(id: id)
+        case .user(let username):
+            router.openUser(username: username)
+        }
+        return true
     }
 
     /// Apply the chosen interface style to every window so System truly
@@ -90,6 +112,7 @@ struct MobileRootView: View {
     @Environment(AccountStore.self) private var account
     @Environment(NotificationService.self) private var notifications
     @Environment(MatchInboxStore.self) private var matchInbox
+    @Environment(AppRouter.self) private var router
 
     enum Tab: Hashable { case stories, search, me, saved, settings }
 
@@ -137,6 +160,24 @@ struct MobileRootView: View {
         // FeedView consumes the pending id and pushes the detail view.
         .onChange(of: notifications.pendingItemID) { _, id in
             if id != nil { selectedTab = .stories }
+        }
+        // In-app / external HN deep links also land on Stories (or Me for users).
+        .onChange(of: router.pendingStoryID) { _, id in
+            if id != nil { selectedTab = .stories }
+        }
+        .onChange(of: router.pendingUsername) { _, name in
+            guard let name else { return }
+            if showMe, name.caseInsensitiveCompare(account.username ?? "") == .orderedSame {
+                selectedTab = .me
+            } else {
+                // Push profile via the Stories stack as a UserRoute isn't tab-level.
+                selectedTab = .stories
+            }
+            // Leave pendingUsername for FeedView to push UserView when needed.
+            // If we opened Me for self, clear it — Me already shows that profile.
+            if showMe, name.caseInsensitiveCompare(account.username ?? "") == .orderedSame {
+                router.pendingUsername = nil
+            }
         }
         .onAppear {
             #if DEBUG

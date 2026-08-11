@@ -10,11 +10,14 @@ struct DesktopRootView: View {
     @Environment(LinkOpener.self) private var linkOpener
     @Environment(AccountStore.self) private var account
     @Environment(NotificationService.self) private var notifications
+    @Environment(AppRouter.self) private var router
 
     // Optional so the single-selection `List(selection:)` resolves to the
     // iOS/Catalyst-available initializer.
     @State private var section: DesktopSection? = .feed(.top)
     @State private var selectedStory: HNItem?
+    /// Deep-linked profile, shown full-screen over the split view.
+    @State private var openedUser: UserRoute?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var showSettings = false
     @State private var didInit = false
@@ -55,9 +58,29 @@ struct DesktopRootView: View {
             }
             #endif
             openPendingNotification()
+            openPendingDeepLink()
         }
         .onChange(of: notifications.pendingItemID) { _, _ in
             openPendingNotification()
+        }
+        .onChange(of: router.pendingStoryID) { _, _ in
+            openPendingDeepLink()
+        }
+        .onChange(of: router.pendingUsername) { _, _ in
+            openPendingDeepLink()
+        }
+        .sheet(item: $openedUser) { route in
+            NavigationStack {
+                UserView(username: route.username)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { openedUser = nil }
+                        }
+                    }
+            }
+            .modifier(AppStoresEnvironment(settings: settings, bookmarks: bookmarks,
+                                           readStore: readStore, linkOpener: linkOpener,
+                                           account: account))
         }
     }
 
@@ -67,6 +90,19 @@ struct DesktopRootView: View {
         notifications.pendingItemID = nil
         section = .feed(settings.defaultFeed)
         selectedStory = HNItem(id: id)
+    }
+
+    /// Open an in-app or external HN deep link in the detail column / sheet.
+    private func openPendingDeepLink() {
+        if let id = router.pendingStoryID {
+            router.pendingStoryID = nil
+            section = .feed(settings.defaultFeed)
+            selectedStory = HNItem(id: id)
+        }
+        if let username = router.pendingUsername {
+            router.pendingUsername = nil
+            openedUser = UserRoute(username: username)
+        }
     }
 
     // MARK: Sidebar

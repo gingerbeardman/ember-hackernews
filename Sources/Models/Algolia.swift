@@ -13,6 +13,8 @@ struct AlgoliaItem: Codable, Identifiable {
     var text: String?
     var points: Int?
     var parentId: Int?
+    /// Present on comments: the root story this comment belongs to.
+    var storyId: Int?
     var children: [AlgoliaItem]?
 }
 
