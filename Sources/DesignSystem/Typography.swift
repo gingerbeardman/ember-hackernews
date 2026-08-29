@@ -30,7 +30,7 @@ enum AppFont {
     static let navTitle = Font.system(.title3, design: .rounded).weight(.bold)
 
     // Reading text — Inter
-    static let articleTitle = Font.reader(23, .bold, relativeTo: .title2)
+    static let articleTitle = Font.reader(21, .bold, relativeTo: .title2)
     static let storyTitle = Font.reader(16.5, .semibold, relativeTo: .headline)
     static let storyTitleCompact = Font.reader(15, .semibold, relativeTo: .subheadline)
     static let body = Font.reader(16, .regular, relativeTo: .callout)
@@ -43,4 +43,22 @@ enum AppFont {
 
     /// Comfortable leading for running reading text.
     static let readingLineSpacing: CGFloat = 4
+}
+
+extension String {
+    /// Avoid a one-word last line — the public equivalent of CSS `text-wrap: pretty`
+    /// for short titles. (`NSParagraphStyle.lineBreakStrategy.pushOut` does this
+    /// in UIKit, but SwiftUI `Text` ignores paragraph style.)
+    var prettyWrapped: String {
+        let words = split(whereSeparator: \.isWhitespace).map(String.init)
+        guard words.count >= 2 else { return self }
+        let lastWordLetters = words.last!.filter(\.isLetter).count
+        let glueCount = (lastWordLetters <= 4 && words.count >= 3) ? 3 : 2
+        let glued = words.suffix(glueCount).joined(separator: " ")
+        // Don't lock a run so long it would overflow a phone column.
+        guard glued.count <= 32 else { return self }
+        let head = words.dropLast(glueCount)
+        let tail = words.suffix(glueCount).joined(separator: "\u{00A0}")
+        return head.isEmpty ? tail : head.joined(separator: " ") + " " + tail
+    }
 }

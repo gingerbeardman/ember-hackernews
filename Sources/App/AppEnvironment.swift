@@ -74,4 +74,8 @@ extension EnvironmentValues {
     /// Opens an article URL respecting the user's in-app/system + Reader settings.
     /// Configured once at the app root where settings and `openURL` are available.
     @Entry var openArticle: (URL) -> Void = { _ in }
+    /// Opens a URL as a webpage (in-app Safari or the system browser). Unlike
+    /// `openArticle` / `openURL`, this does not rewrite news.ycombinator.com
+    /// item/user links into native screens — used by "Open in Hacker News".
+    @Entry var openWeb: (URL) -> Void = { _ in }
 }

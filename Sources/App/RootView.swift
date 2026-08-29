@@ -38,6 +38,14 @@ struct RootView: View {
                 systemOpenURL(url)
             }
         }
+        // Explicit "open this as a webpage" — never rewritten to a native HN screen.
+        .environment(\.openWeb) { url in
+            if settings.openLinksInApp {
+                linkOpener.present(url, reader: false)
+            } else {
+                systemOpenURL(url)
+            }
+        }
         // Route inline comment/text links the same way, honoring reader mode.
         .environment(\.openURL, OpenURLAction { url in
             if handleHNLink(url) { return .handled }

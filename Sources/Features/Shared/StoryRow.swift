@@ -48,7 +48,6 @@ struct StoryRow: View {
             && item.kind != .job && item.author != account.username
     }
     private var hasUpvoted: Bool { voteStore.hasUpvoted(item.id) }
-    private var hasDownvoted: Bool { voteStore.hasDownvoted(item.id) }
     /// Points adjusted by our own optimistic vote (HN's API count lags).
     private var displayedPoints: Int { item.points + voteStore.scoreDelta(for: item.id) }
 
@@ -62,18 +61,6 @@ struct StoryRow: View {
         } else {
             let previous = voteStore.direction(of: item.id)
             applyVote(.up, optimistic: { voteStore.markUpvoted(item.id) }, revert: {
-                restoreVote(previous)
-            })
-        }
-    }
-
-    private func downvote() {
-        guard canVote else { return }
-        if hasDownvoted {
-            applyVote(.unvote, optimistic: { voteStore.clearVote(item.id) })
-        } else {
-            let previous = voteStore.direction(of: item.id)
-            applyVote(.down, optimistic: { voteStore.markDownvoted(item.id) }, revert: {
                 restoreVote(previous)
             })
         }
@@ -138,7 +125,7 @@ struct StoryRow: View {
                     hostLabel(host)
                 }
 
-                Text(item.displayTitle)
+                Text(item.displayTitle.prettyWrapped)
                     .font(AppFont.storyTitle)
                     .foregroundStyle(isRead ? Theme.textSecondary : Theme.textPrimary)
                     .lineLimit(3)
@@ -255,10 +242,8 @@ struct StoryRow: View {
     @ViewBuilder private var upvoteStat: some View {
         if canVote {
             Button { toggleUpvote() } label: {
-                let icon = hasUpvoted ? "arrow.up.circle.fill"
-                    : (hasDownvoted ? "arrow.down.circle.fill" : "arrow.up")
-                let tint = hasDownvoted ? Theme.downvote : Theme.upvote
-                StatLabel(systemImage: icon, value: "\(displayedPoints)", tint: tint)
+                StatLabel(systemImage: hasUpvoted ? "arrow.up.circle.fill" : "arrow.up",
+                          value: "\(displayedPoints)", tint: Theme.upvote)
             }
             .buttonStyle(.plain)
             .accessibilityHidden(true)
@@ -278,11 +263,6 @@ struct StoryRow: View {
                 Button("Unvote") { toggleUpvote() }
             } else {
                 Button("Upvote") { toggleUpvote() }
-            }
-            if hasDownvoted {
-                Button("Remove Downvote") { downvote() }
-            } else {
-                Button("Downvote") { downvote() }
             }
         }
         Button(saveActionTitle) {
@@ -315,15 +295,6 @@ struct StoryRow: View {
             } else {
                 Button { toggleUpvote() } label: {
                     Label("Upvote", systemImage: "arrow.up.circle")
-                }
-            }
-            if hasDownvoted {
-                Button { downvote() } label: {
-                    Label("Remove Downvote", systemImage: "arrow.uturn.backward")
-                }
-            } else {
-                Button { downvote() } label: {
-                    Label("Downvote", systemImage: "arrow.down.circle")
                 }
             }
             Divider()

@@ -3,7 +3,7 @@ import SwiftUI
 struct UserView: View {
     let username: String
     @State private var vm: UserViewModel
-    @Environment(\.openURL) private var openURL
+    @Environment(\.openWeb) private var openWeb
     @Environment(AccountStore.self) private var account
     @Environment(MatchInboxStore.self) private var matchInbox
 
@@ -48,7 +48,7 @@ struct UserView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    openURL(URL(string: "https://news.ycombinator.com/user?id=\(username)")!)
+                    openWeb(URL(string: "https://news.ycombinator.com/user?id=\(username)")!)
                 } label: {
                     Image(systemName: "safari")
                 }

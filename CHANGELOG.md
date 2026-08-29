@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Discussion header matches Hacker News: the title opens the article, with the full article URL as a second link underneath. The large site card is gone.
+- Show Story Thumbnails now also applies on the discussion: a small favicon beside the URL when the setting is on, nothing extra when it's off.
+- Story upvote and comment actions sit on one line without the Comment label wrapping.
+- Headlines wrap more evenly, keeping a short last word from sitting alone on its own line.
+
+### Fixed
+- Tapping a saved-search notification from the lock screen opens the story in the app.
+- Opening a story that matched a saved search marks that notify as read (inbox, badge, and the banner).
+- Downvoting a comment no longer pops open a Hacker News web view.
+- Open in Hacker News opens the real news.ycombinator.com page in a web view, instead of the in-app discussion.
+
+### Removed
+- Downvote on stories. Hacker News only offers downvotes on comments.
+
 ## [1.3.0] - 2026-06-22
 
 ### Fixed

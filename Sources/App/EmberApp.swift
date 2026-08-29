@@ -1,7 +1,19 @@
 import SwiftUI
+import UIKit
+
+/// Sets the notification-center delegate before launch finishes so a lock-screen
+/// tap on a cold start is delivered instead of dropped.
+final class EmberAppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     willFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        NotificationService.shared.configure()
+        return true
+    }
+}
 
 @main
 struct EmberApp: App {
+    @UIApplicationDelegateAdaptor(EmberAppDelegate.self) private var appDelegate
     @State private var settings = SettingsStore()
     @State private var bookmarks = BookmarkStore()
     @State private var readStore = ReadStore()

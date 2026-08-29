@@ -84,10 +84,21 @@ final class HNWebWriter: NSObject, WKNavigationDelegate {
     /// Vote on an item by clicking HN's own up / down / un-vote control — HN
     /// keeps the per-item `auth` token internal, so we parse nothing.
     /// Down-votes require sufficient HN karma; when the arrow is absent the call
-    /// fails with `.rejected` and the UI can fall back to the web sheet.
-    func vote(itemID: Int, action: VoteAction) async throws {
-        let url = URL(string: "https://news.ycombinator.com/item?id=\(itemID)")!
-        _ = try await run(url: url, job: .vote(itemID: itemID, action: action))
+    /// fails with `.rejected`.
+    ///
+    /// `onPage` is the item page to load. Comments' vote arrows are rendered on
+    /// the parent story thread, not on `item?id=<comment>`, so callers should
+    /// pass the story id when voting on a comment.
+    func vote(itemID: Int, action: VoteAction, onPage pageID: Int? = nil) async throws {
+        let page = pageID ?? itemID
+        do {
+            let url = URL(string: "https://news.ycombinator.com/item?id=\(page)")!
+            _ = try await run(url: url, job: .vote(itemID: itemID, action: action))
+        } catch PostError.rejected where page != itemID {
+            // Paginated threads can omit a deep comment; try the comment's own page.
+            let url = URL(string: "https://news.ycombinator.com/item?id=\(itemID)")!
+            _ = try await run(url: url, job: .vote(itemID: itemID, action: action))
+        }
     }
 
     /// Convenience: `true` upvotes, `false` unvotes (legacy call sites).
@@ -136,6 +147,13 @@ final class HNWebWriter: NSObject, WKNavigationDelegate {
             }
 
         case .vote(let itemID, let action):
+            // A clicky-less vote (some down/comment arrows) navigates instead of
+            // XHR-ing. Treat the follow-up didFinish as success so we don't
+            // mistake the vote-result page for a missing arrow.
+            if submitted {
+                finish(.success(nil))
+                return
+            }
             webView.evaluateJavaScript(Self.clickVoteJS(itemID: itemID, action: action)) { [weak self] result, _ in
                 guard let self else { return }
                 guard (result as? String) == "ok" else {
@@ -143,6 +161,7 @@ final class HNWebWriter: NSObject, WKNavigationDelegate {
                     self.finish(.failure(PostError.rejected))
                     return
                 }
+                self.submitted = true
                 // HN's vote fires asynchronously (an image GET); give it a moment
                 // to reach the server before we tear the web view down.
                 Task { [weak self] in
@@ -258,9 +277,19 @@ final class HNWebWriter: NSObject, WKNavigationDelegate {
     /// insufficient karma for downvotes).
     static func clickVoteJS(itemID: Int, action: VoteAction) -> String {
         let anchor = "\(action.anchorPrefix)_\(itemID)"
+        let how = action.anchorPrefix
         return """
         (function(){
           var el = document.getElementById('\(anchor)');
+          if(!el){
+            var idRe = /[?&]id=\(itemID)(?:&|$)/;
+            var howRe = /[?&]how=\(how)(?:&|$)/;
+            var links = document.querySelectorAll('a[href*="vote"]');
+            for(var i=0;i<links.length;i++){
+              var h = links[i].getAttribute('href') || '';
+              if(idRe.test(h) && howRe.test(h)){ el = links[i]; break; }
+            }
+          }
           if(!el){ return 'noarrow'; }
           el.click();
           return 'ok';

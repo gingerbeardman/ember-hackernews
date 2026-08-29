@@ -61,13 +61,16 @@ final class MatchInboxStore {
         matches.remove(at: index)
         persist()
         syncBadge()
+        notifier.removeDelivered(itemIDs: [id])
     }
 
     /// Mark every pending match as read.
     func removeAll() {
+        let ids = matches.map(\.id)
         matches.removeAll()
         persist()
         syncBadge()
+        notifier.removeDelivered(itemIDs: ids)
     }
 
     /// Remove a user-selected set of pending matches.
@@ -76,6 +79,7 @@ final class MatchInboxStore {
         matches.removeAll { ids.contains($0.id) }
         persist()
         syncBadge()
+        notifier.removeDelivered(itemIDs: Array(ids))
     }
 
     // MARK: Badge

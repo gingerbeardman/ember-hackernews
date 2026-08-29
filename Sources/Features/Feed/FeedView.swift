@@ -94,7 +94,9 @@ struct FeedView: View {
     private func openPendingNotification() {
         guard let id = notifications.pendingItemID else { return }
         notifications.pendingItemID = nil
-        path.append(HNItem(id: id))
+        var next = NavigationPath()
+        next.append(HNItem(id: id))
+        path = next
     }
 
     /// Open a deep-linked HN discussion or user profile, then clear the router.

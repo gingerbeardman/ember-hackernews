@@ -124,30 +124,30 @@ struct CommentRow: View {
     }
 
     private var interactionBar: some View {
-        HStack(spacing: Spacing.l) {
+        FlexibleLayout(spacing: Spacing.m, lineSpacing: Spacing.s) {
             if canVote {
                 Button {
                     Haptics.soft()
                     onUpvote()
                 } label: {
-                    Label(isUpvoted ? "Upvoted" : "Upvote",
-                          systemImage: isUpvoted ? "arrow.up.circle.fill" : "arrow.up.circle")
-                        .font(AppFont.metaStrong)
-                        .foregroundStyle(isUpvoted ? Theme.upvote : Theme.textSecondary)
+                    interactionLabel(isUpvoted ? "Upvoted" : "Upvote",
+                                     systemImage: isUpvoted ? "arrow.up.circle.fill" : "arrow.up.circle",
+                                     tint: isUpvoted ? Theme.upvote : Theme.textSecondary)
                 }
                 .buttonStyle(.plain)
+                .fixedSize(horizontal: true, vertical: false)
                 .accessibilityHint(isUpvoted ? "Removes your upvote" : "Upvotes this comment")
 
                 Button {
                     Haptics.soft()
                     onDownvote()
                 } label: {
-                    Label(isDownvoted ? "Downvoted" : "Downvote",
-                          systemImage: isDownvoted ? "arrow.down.circle.fill" : "arrow.down.circle")
-                        .font(AppFont.metaStrong)
-                        .foregroundStyle(isDownvoted ? Theme.downvote : Theme.textSecondary)
+                    interactionLabel(isDownvoted ? "Downvoted" : "Downvote",
+                                     systemImage: isDownvoted ? "arrow.down.circle.fill" : "arrow.down.circle",
+                                     tint: isDownvoted ? Theme.downvote : Theme.textSecondary)
                 }
                 .buttonStyle(.plain)
+                .fixedSize(horizontal: true, vertical: false)
                 .accessibilityHint(isDownvoted ? "Removes your downvote" : "Downvotes this comment")
             }
 
@@ -155,27 +155,36 @@ struct CommentRow: View {
                 Haptics.tap()
                 onReply()
             } label: {
-                Label("Reply", systemImage: "arrowshape.turn.up.left")
-                    .font(AppFont.metaStrong)
-                    .foregroundStyle(Theme.textSecondary)
+                interactionLabel("Reply", systemImage: "arrowshape.turn.up.left",
+                                 tint: Theme.textSecondary)
             }
             .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
 
             if canEdit {
                 Button {
                     Haptics.tap()
                     onEdit()
                 } label: {
-                    Label("Edit", systemImage: "pencil")
-                        .font(AppFont.metaStrong)
-                        .foregroundStyle(Theme.textSecondary)
+                    interactionLabel("Edit", systemImage: "pencil",
+                                     tint: Theme.textSecondary)
                 }
                 .buttonStyle(.plain)
+                .fixedSize(horizontal: true, vertical: false)
             }
-            Spacer(minLength: 0)
         }
         .padding(.top, 2)
         .accessibilityHidden(false)
+    }
+
+    private func interactionLabel(_ title: String, systemImage: String, tint: Color) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(AppFont.metaStrong)
+            .foregroundStyle(tint)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
     }
 
     /// Leading offset at which a comment of `depth` begins its content (avatar /

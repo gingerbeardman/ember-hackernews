@@ -17,9 +17,11 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
 
     @ObservationIgnored private let center = UNUserNotificationCenter.current()
+    private static let itemIDKey = "itemID"
 
     /// Register as the delegate and sync the current authorization status.
-    /// Call once at launch.
+    /// Must run in `application(_:willFinishLaunchingWithOptions:)` so a
+    /// lock-screen tap on a cold launch is delivered to `didReceive`.
     func configure() {
         center.delegate = self
         Task { await refreshStatus() }
@@ -46,15 +48,41 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         content.body = body
         content.sound = .default
         if let threadID { content.threadIdentifier = threadID }
-        if let itemID { content.userInfo = ["itemID": itemID] }
-        let request = UNNotificationRequest(identifier: UUID().uuidString,
+        if let itemID {
+            // NSNumber survives the plist round-trip the system uses when the
+            // app is launched from a lock-screen tap; a raw Int often doesn't.
+            content.userInfo = [Self.itemIDKey: NSNumber(value: itemID)]
+            content.targetContentIdentifier = Self.requestID(for: itemID)
+        }
+        let identifier = itemID.map(Self.requestID(for:)) ?? UUID().uuidString
+        let request = UNNotificationRequest(identifier: identifier,
                                             content: content, trigger: nil)
         center.add(request)
+    }
+
+    /// Drop the delivered system notification for a story the user has opened.
+    func removeDelivered(itemIDs: [Int]) {
+        guard !itemIDs.isEmpty else { return }
+        center.removeDeliveredNotifications(withIdentifiers: itemIDs.map(Self.requestID(for:)))
     }
 
     /// Set the app icon badge (used to mirror the unread saved-search matches).
     func setBadgeCount(_ count: Int) {
         center.setBadgeCount(count)
+    }
+
+    /// Stable request id so opening a story can dismiss its lock-screen banner.
+    static func requestID(for itemID: Int) -> String { "match-\(itemID)" }
+
+    /// `userInfo["itemID"]` comes back as `NSNumber` after the system
+    /// serializes the payload; accept Int / NSNumber / String so a lock-screen
+    /// tap still routes.
+    static func itemID(from userInfo: [AnyHashable: Any]) -> Int? {
+        let raw = userInfo[itemIDKey]
+        if let n = raw as? NSNumber { return n.intValue }
+        if let id = raw as? Int { return id }
+        if let s = raw as? String { return Int(s) }
+        return nil
     }
 
     // MARK: UNUserNotificationCenterDelegate
@@ -72,7 +100,15 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        guard let id = response.notification.request.content.userInfo["itemID"] as? Int else { return }
-        await MainActor.run { pendingItemID = id }
+        await MainActor.run { handle(response) }
+    }
+
+    /// Pull the story id out of a notification response and queue it for the UI.
+    /// Safe to call from either the notification delegate or a scene-connect path.
+    @MainActor
+    func handle(_ response: UNNotificationResponse) {
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
+        guard let id = Self.itemID(from: response.notification.request.content.userInfo) else { return }
+        pendingItemID = id
     }
 }

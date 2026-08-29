@@ -13,8 +13,9 @@ struct StoryDetailView: View {
     @Environment(VoteStore.self) private var voteStore
     @Environment(PendingCommentStore.self) private var pendingComments
     @Environment(FavoritesStore.self) private var favorites
+    @Environment(MatchInboxStore.self) private var matchInbox
     @Environment(\.openArticle) private var openArticle
-    @Environment(\.openURL) private var openURL
+    @Environment(\.openWeb) private var openWeb
 
     init(item: HNItem) {
         self.item = item
@@ -32,7 +33,12 @@ struct StoryDetailView: View {
     private var textScale: CGFloat { CGFloat(settings.readingTextScale) }
 
     /// Whether logged-in write actions (vote / reply / comment) are available.
-    private var canInteract: Bool { settings.accountFeaturesEnabled && account.isSignedIn }
+    private var canInteract: Bool {
+        #if DEBUG
+        if LaunchArgs.fakeAccount { return true }
+        #endif
+        return settings.accountFeaturesEnabled && account.isSignedIn
+    }
     /// Whether `author`'s item can be upvoted. You can't vote on your own posts —
     /// HN renders no arrow, so we hide the affordance instead of failing into web.
     private func canVote(_ author: String) -> Bool {
@@ -77,6 +83,10 @@ struct StoryDetailView: View {
         .gesture(pinchToZoom)
         .task {
             if settings.markReadOnOpen { readStore.markRead(item.id) }
+            // Viewing a story from anywhere (feed, search, notification) also
+            // clears a matching saved-search notify, so inbox and OS badge stay
+            // in sync with what the user has already opened.
+            matchInbox.remove(item.id)
             vm.floatAuthor = floatAuthor
             vm.sort = settings.commentSort
             vm.pendingStore = pendingComments
@@ -162,7 +172,8 @@ struct StoryDetailView: View {
         }
     }
 
-    /// Toggle a downvote (requires HN karma). Optimistic; falls back to web on rejection.
+    /// Toggle a comment downvote (HN has no down arrows on stories; comments
+    /// require sufficient karma). Optimistic; no web sheet on rejection.
     private func toggleDownvote(_ id: Int) {
         guard canInteract else { return }
         if voteStore.hasDownvoted(id) {
@@ -182,11 +193,17 @@ struct StoryDetailView: View {
         Haptics.soft()
         Task {
             do {
-                try await writer.vote(itemID: id, action: action)
+                // Comments' vote arrows live on the parent story page, not on
+                // `item?id=<comment>`. Always drive the click from this thread.
+                try await writer.vote(itemID: id, action: action, onPage: story.id)
             } catch {
                 if let revert { revert() } else { voteStore.clearVote(id) }
                 Haptics.warning()
-                webTask = .item(itemID: id)
+                // Downvote rejection is usually "no arrow" (insufficient karma);
+                // opening HN's page in a sheet doesn't grant the privilege.
+                if action != .down {
+                    webTask = .item(itemID: id)
+                }
             }
         }
     }
@@ -259,14 +276,12 @@ struct StoryDetailView: View {
                 TagBadge(text: label, color: color)
             }
 
-            Text(story.displayTitle)
-                .font(.reader(23 * textScale, .bold, relativeTo: .title2))
-                .foregroundStyle(Theme.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
-
-            if let url = story.articleURL {
-                articleCard(url: url)
+            VStack(alignment: .leading, spacing: 5) {
+                titleLink
+                if let url = story.articleURL {
+                    sourceLink(url: url)
+                }
+                metaBar
             }
 
             if story.isTextPost, let text = story.text, !text.isEmpty {
@@ -275,10 +290,8 @@ struct StoryDetailView: View {
                         CommentBlockView(block: block)
                     }
                 }
-                .padding(.top, Spacing.xxs)
             }
 
-            metaBar
             if canInteract { actionBar }
         }
         .padding(Spacing.l)
@@ -286,40 +299,42 @@ struct StoryDetailView: View {
     }
 
     private var actionBar: some View {
-        HStack(spacing: Spacing.m) {
+        // Whole buttons wrap if needed; labels themselves never wrap inside a
+        // squeezed bordered control (the "Com / ment" problem on a narrow phone).
+        FlexibleLayout(spacing: Spacing.xs, lineSpacing: Spacing.s) {
             if canVote(story.author) {
                 Button {
                     toggleUpvote(story.id)
                 } label: {
-                    Label(voteStore.hasUpvoted(story.id) ? "Upvoted" : "Upvote",
-                          systemImage: voteStore.hasUpvoted(story.id) ? "arrow.up.circle.fill" : "arrow.up.circle")
-                        .font(.subheadline.weight(.semibold))
+                    actionLabel(voteStore.hasUpvoted(story.id) ? "Upvoted" : "Upvote",
+                                systemImage: voteStore.hasUpvoted(story.id)
+                                    ? "arrow.up.circle.fill" : "arrow.up.circle")
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.small)
                 .tint(Theme.upvote)
-
-                Button {
-                    toggleDownvote(story.id)
-                } label: {
-                    Label(voteStore.hasDownvoted(story.id) ? "Downvoted" : "Downvote",
-                          systemImage: voteStore.hasDownvoted(story.id) ? "arrow.down.circle.fill" : "arrow.down.circle")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .buttonStyle(.bordered)
-                .tint(Theme.downvote)
+                .fixedSize(horizontal: true, vertical: false)
+                .accessibilityLabel(voteStore.hasUpvoted(story.id) ? "Upvoted" : "Upvote")
             }
 
             Button {
                 compose(parentID: story.id, title: "Add Comment", context: story.displayTitle)
             } label: {
-                Label("Comment", systemImage: "bubble.left")
-                    .font(.subheadline.weight(.semibold))
+                actionLabel("Comment", systemImage: "bubble.left")
             }
             .buttonStyle(.bordered)
+            .controlSize(.small)
             .tint(settings.accent.color)
-
-            Spacer(minLength: 0)
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityLabel("Comment")
         }
+    }
+
+    private func actionLabel(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.footnote.weight(.semibold))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
     }
 
     /// Story score, adjusted by our own optimistic vote (HN's API count lags).
@@ -327,37 +342,56 @@ struct StoryDetailView: View {
         story.points + voteStore.scoreDelta(for: story.id)
     }
 
-    private func articleCard(url: URL) -> some View {
+    /// Title is the article link when a URL exists (as on HN); otherwise a heading.
+    @ViewBuilder private var titleLink: some View {
+        let title = Text(story.displayTitle.prettyWrapped)
+            .font(.reader(21 * textScale, .bold, relativeTo: .title2))
+            .foregroundStyle(Theme.textPrimary)
+            .underline(story.articleURL != nil && settings.underlineLinks)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+
+        if let url = story.articleURL {
+            Button {
+                Haptics.tap()
+                openArticle(url)
+            } label: {
+                title.frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityLabel(story.displayTitle)
+            .accessibilityHint("Opens the linked page")
+        } else {
+            title
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityLabel(story.displayTitle)
+        }
+    }
+
+    /// Full article URL, also tappable. Favicon follows the feed thumbnail setting.
+    private func sourceLink(url: URL) -> some View {
         Button {
             Haptics.tap()
             openArticle(url)
         } label: {
-            HStack(spacing: Spacing.m) {
-                FaviconView(host: story.host, size: 42)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(story.host ?? url.absoluteString)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(1)
-                    Text("Read article")
-                        .font(AppFont.meta)
-                        .foregroundStyle(Theme.textSecondary)
+            HStack(alignment: .center, spacing: Spacing.s) {
+                if settings.showThumbnails {
+                    FaviconView(host: story.host, size: 14)
                 }
-                Spacer(minLength: 0)
-                Image(systemName: "arrow.up.forward.app")
-                    .font(.system(size: 18))
-                    .foregroundStyle(settings.accent.color)
+                Text(url.absoluteString)
+                    .font(AppFont.meta)
+                    .foregroundStyle(Theme.link)
+                    .underline(settings.underlineLinks)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
             }
-            .padding(Spacing.m)
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.m, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.m, style: .continuous)
-                    .strokeBorder(Theme.separator, lineWidth: 1)
-            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.card)
-        .accessibilityLabel("Read article from \(story.host ?? "link")")
+        .buttonStyle(.plain)
+        .accessibilityLabel("Article URL, \(story.host ?? url.absoluteString)")
         .accessibilityHint("Opens the linked page")
     }
 
@@ -532,7 +566,7 @@ struct StoryDetailView: View {
                 if let url = story.articleURL {
                     Button { openArticle(url) } label: { Label("Open Link", systemImage: "safari") }
                 }
-                Button { openURL(story.hnURL) } label: {
+                Button { openWeb(story.hnURL) } label: {
                     Label("Open in Hacker News", systemImage: "globe")
                 }
                 Button {
